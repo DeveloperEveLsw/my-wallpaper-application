@@ -1,0 +1,24 @@
+# .NET build output
+**/bin/
+**/obj/
+artifacts/
+
+# Visual Studio and JetBrains user state
+.vs/
+.idea/
+*.user
+*.suo
+
+# Test and coverage output
+TestResults/
+coverage/
+
+# Local runtime configuration and logs
+*.local.json
+logs/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
