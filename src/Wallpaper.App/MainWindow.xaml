@@ -149,6 +149,12 @@
                         <TextBlock Style="{StaticResource PanelTitleStyle}"
                                    VerticalAlignment="Center"
                                    Text="{Binding ModalTitle}" />
+                        <TextBlock Margin="0,0,52,0"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="#AFC2D2E8"
+                                   Text="{Binding VisibleFileCountText}" />
                         <Button Width="34"
                                 Height="34"
                                 HorizontalAlignment="Right"
@@ -159,55 +165,105 @@
                                 Style="{StaticResource GlassButtonStyle}" />
                     </Grid>
 
-                    <ScrollViewer Grid.Row="1"
-                                  Margin="0,20,0,0"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding VisibleFiles}">
-                            <ItemsControl.ItemsPanel>
+                    <Grid Grid.Row="1" Margin="0,20,0,0">
+                        <ListBox ItemsSource="{Binding VisibleFileRows}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 ScrollViewer.CanContentScroll="True"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling">
+                            <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal" />
+                                    <VirtualizingStackPanel />
                                 </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="IsHitTestVisible" Value="True" />
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter />
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Width="116"
-                                            Height="122"
-                                            Margin="4"
-                                            Padding="8"
-                                            Background="#0AFFFFFF"
-                                            BorderBrush="Transparent"
-                                            BorderThickness="1"
-                                            CornerRadius="16"
-                                            ToolTip="{Binding Name}">
-                                        <StackPanel VerticalAlignment="Center">
-                                            <Border Width="54"
-                                                    Height="62"
-                                                    HorizontalAlignment="Center"
-                                                    Background="#22FFFFFF"
-                                                    BorderBrush="#44FFFFFF"
-                                                    BorderThickness="1"
-                                                    CornerRadius="10">
-                                                <TextBlock HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="12"
-                                                           FontWeight="Bold"
-                                                           Foreground="#DDEBFAFF"
-                                                           Text="{Binding ExtensionLabel}" />
-                                            </Border>
-                                            <TextBlock Margin="0,8,0,0"
-                                                       HorizontalAlignment="Center"
-                                                       FontSize="12"
-                                                       Text="{Binding Name}"
-                                                       TextAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       TextWrapping="NoWrap" />
-                                        </StackPanel>
-                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Files}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="128"
+                                                        Height="122"
+                                                        Margin="4"
+                                                        Padding="8"
+                                                        Background="#0AFFFFFF"
+                                                        BorderBrush="Transparent"
+                                                        BorderThickness="1"
+                                                        CornerRadius="16"
+                                                        ToolTip="{Binding Name}">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <Grid Width="58" Height="62" HorizontalAlignment="Center">
+                                                            <Border Background="#22FFFFFF"
+                                                                    BorderBrush="#44FFFFFF"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="10">
+                                                                <TextBlock HorizontalAlignment="Center"
+                                                                           VerticalAlignment="Center"
+                                                                           FontSize="12"
+                                                                           FontWeight="Bold"
+                                                                           Foreground="#DDEBFAFF"
+                                                                           Text="{Binding ExtensionLabel}" />
+                                                            </Border>
+                                                            <Image Width="58"
+                                                                   Height="62"
+                                                                   Loaded="FileVisual_OnLoaded"
+                                                                   Source="{Binding Visual}"
+                                                                   Stretch="Uniform" />
+                                                        </Grid>
+                                                        <TextBlock Margin="0,8,0,0"
+                                                                   HorizontalAlignment="Center"
+                                                                   FontSize="12"
+                                                                   Text="{Binding Name}"
+                                                                   TextAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   TextWrapping="NoWrap" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="14"
+                                   Foreground="#91A7B9CE"
+                                   Text="이 폴더에는 표시할 파일이 없습니다.">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasVisibleFiles}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </Grid>
             </Border>
 
@@ -234,39 +290,89 @@
                                   HorizontalScrollBarVisibility="Hidden"
                                   PanningMode="HorizontalOnly"
                                   VerticalScrollBarVisibility="Disabled">
-                        <ItemsControl ItemsSource="{Binding FolderCards}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding}"
-                                            Style="{StaticResource CardButtonStyle}">
-                                        <StackPanel>
-                                            <Grid Width="58" Height="58" HorizontalAlignment="Center">
-                                                <Path Margin="2,7,2,3"
-                                                      Data="M 4,15 L 22,15 L 28,8 L 52,8 Q 56,8 56,13 L 56,47 Q 56,52 51,52 L 7,52 Q 2,52 2,47 L 2,20 Q 2,15 4,15 Z"
-                                                      Fill="#ECA4C7FF"
-                                                      Stretch="Fill" />
-                                                <Path Margin="5,16,5,6"
-                                                      Data="M 2,4 Q 2,0 7,0 L 45,0 Q 50,0 50,5 L 50,33 Q 50,38 45,38 L 7,38 Q 2,38 2,33 Z"
-                                                      Fill="#B7659DE8"
-                                                      Stretch="Fill" />
+                        <Grid>
+                            <ItemsControl ItemsSource="{Binding FolderCards}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button AllowDrop="True"
+                                                Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                DragLeave="DockCard_OnDragLeave"
+                                                DragOver="DockCard_OnDragOver"
+                                                Drop="DockCard_OnDrop"
+                                                PreviewMouseLeftButtonDown="DockCard_OnPreviewMouseLeftButtonDown"
+                                                PreviewMouseMove="DockCard_OnPreviewMouseMove"
+                                                Style="{StaticResource CardButtonStyle}">
+                                            <Grid>
+                                                <StackPanel>
+                                                    <Grid Width="58" Height="58" HorizontalAlignment="Center">
+                                                        <Path Margin="2,7,2,3"
+                                                              Data="M 4,15 L 22,15 L 28,8 L 52,8 Q 56,8 56,13 L 56,47 Q 56,52 51,52 L 7,52 Q 2,52 2,47 L 2,20 Q 2,15 4,15 Z"
+                                                              Fill="#ECA4C7FF"
+                                                              Stretch="Fill" />
+                                                        <Path Margin="5,16,5,6"
+                                                              Data="M 2,4 Q 2,0 7,0 L 45,0 Q 50,0 50,5 L 50,33 Q 50,38 45,38 L 7,38 Q 2,38 2,33 Z"
+                                                              Fill="#B7659DE8"
+                                                              Stretch="Fill" />
+                                                    </Grid>
+                                                    <TextBlock Margin="2,5,2,0"
+                                                               HorizontalAlignment="Center"
+                                                               FontSize="12"
+                                                               Text="{Binding Name}"
+                                                               TextAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <Border x:Name="InsertBeforeIndicator"
+                                                        Width="3"
+                                                        Margin="-5,7,0,7"
+                                                        HorizontalAlignment="Left"
+                                                        Background="#D7A9D0FF"
+                                                        CornerRadius="2"
+                                                        Visibility="Collapsed" />
+                                                <Border x:Name="InsertAfterIndicator"
+                                                        Width="3"
+                                                        Margin="0,7,-5,7"
+                                                        HorizontalAlignment="Right"
+                                                        Background="#D7A9D0FF"
+                                                        CornerRadius="2"
+                                                        Visibility="Collapsed" />
                                             </Grid>
-                                            <TextBlock Margin="2,5,2,0"
-                                                       HorizontalAlignment="Center"
-                                                       FontSize="12"
-                                                       Text="{Binding Name}"
-                                                       TextAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                        </Button>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding ShowInsertBefore}" Value="True">
+                                                <Setter TargetName="InsertBeforeIndicator" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ShowInsertAfter}" Value="True">
+                                                <Setter TargetName="InsertAfterIndicator" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock MinWidth="120"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="#91A7B9CE"
+                                       Text="폴더 없음">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataContext.HasFolderCards, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
                     </ScrollViewer>
 
                     <Border Grid.Column="1"

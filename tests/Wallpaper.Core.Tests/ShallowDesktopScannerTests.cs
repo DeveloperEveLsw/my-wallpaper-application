@@ -51,4 +51,60 @@ public sealed class ShallowDesktopScannerTests
         Assert.Equal(RootScanError.PathNotFullyQualified, relativeError.Error);
         Assert.Equal(RootScanError.DirectoryNotFound, missingError.Error);
     }
+
+    [Fact]
+    public void Scan_ReturnsAnEmptySnapshotForAnEmptyRoot()
+    {
+        using var fixture = new TemporaryDirectory();
+
+        var snapshot = new ShallowDesktopScanner().Scan(fixture.Path);
+
+        Assert.Empty(snapshot.Folders);
+        Assert.Empty(snapshot.RootFiles);
+        Assert.Empty(snapshot.Warnings);
+    }
+
+    [Fact]
+    public void Scan_PreservesAnEmptyFolderAsADockCard()
+    {
+        using var fixture = new TemporaryDirectory();
+        fixture.CreateDirectory("Empty");
+
+        var snapshot = new ShallowDesktopScanner().Scan(fixture.Path);
+
+        var folder = Assert.Single(snapshot.Folders);
+        Assert.Equal("Empty", folder.Name);
+        Assert.Empty(folder.Files);
+    }
+
+    [Fact]
+    public void Scan_CanReadMetadataForAFileLockedAgainstContentAccess()
+    {
+        using var fixture = new TemporaryDirectory();
+        var path = fixture.CreateFile("locked.png", "not an image");
+        using var lockedFile = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+
+        var snapshot = new ShallowDesktopScanner().Scan(fixture.Path);
+
+        var file = Assert.Single(snapshot.RootFiles);
+        Assert.Equal("locked.png", file.Name);
+        Assert.Equal(12, file.Length);
+    }
+
+    [Fact]
+    public void Scan_HandlesManyFilesWithoutChangingNaturalOrder()
+    {
+        using var fixture = new TemporaryDirectory();
+        for (var index = 1; index <= 1_500; index++)
+        {
+            fixture.CreateFile($"File{index}.txt");
+        }
+
+        var snapshot = new ShallowDesktopScanner().Scan(fixture.Path);
+
+        Assert.Equal(1_500, snapshot.RootFiles.Count);
+        Assert.Equal("File1.txt", snapshot.RootFiles[0].Name);
+        Assert.Equal("File10.txt", snapshot.RootFiles[9].Name);
+        Assert.Equal("File1500.txt", snapshot.RootFiles[^1].Name);
+    }
 }

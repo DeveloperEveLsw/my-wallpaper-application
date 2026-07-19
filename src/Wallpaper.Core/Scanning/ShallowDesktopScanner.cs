@@ -17,7 +17,7 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
         var folders = EnumerateFolders(normalizedRoot, warnings)
             .OrderBy(folder => folder.Name, NaturalNameComparer.OrdinalIgnoreCase)
             .ToArray();
-        var rootFiles = EnumerateFiles(normalizedRoot, normalizedRoot, warnings)
+        var rootFiles = EnumerateFiles(normalizedRoot, normalizedRoot, warnings, isRoot: true)
             .OrderBy(file => file.Name, NaturalNameComparer.OrdinalIgnoreCase)
             .ToArray();
         var rootInfo = new DirectoryInfo(normalizedRoot);
@@ -45,17 +45,29 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
                 "루트 폴더는 절대 경로여야 합니다.");
         }
 
-        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
-        if (!Directory.Exists(normalizedRoot))
+        string normalizedRoot;
+        try
+        {
+            normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException)
         {
             throw new RootScanException(
-                RootScanError.DirectoryNotFound,
-                "설정된 루트 폴더를 찾을 수 없습니다.");
+                RootScanError.PathNotFullyQualified,
+                "루트 폴더 경로가 올바르지 않습니다.",
+                exception);
         }
 
         try
         {
             var attributes = File.GetAttributes(normalizedRoot);
+            if ((attributes & FileAttributes.Directory) == 0)
+            {
+                throw new RootScanException(
+                    RootScanError.DirectoryNotFound,
+                    "설정된 루트 경로가 폴더가 아닙니다.");
+            }
+
             if ((attributes & FileAttributes.ReparsePoint) != 0)
             {
                 throw new RootScanException(
@@ -63,11 +75,19 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
                     "재분석 지점은 루트 폴더로 사용할 수 없습니다.");
             }
         }
-        catch (UnauthorizedAccessException exception)
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or System.Security.SecurityException)
         {
             throw new RootScanException(
                 RootScanError.AccessDenied,
                 "루트 폴더에 접근할 수 없습니다.",
+                exception);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            throw new RootScanException(
+                RootScanError.DirectoryNotFound,
+                "설정된 루트 폴더를 찾을 수 없습니다.",
                 exception);
         }
         catch (IOException exception)
@@ -90,9 +110,17 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
         {
             paths = Directory.EnumerateDirectories(rootPath, "*", SearchOption.TopDirectoryOnly).ToArray();
         }
-        catch (UnauthorizedAccessException exception)
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or System.Security.SecurityException)
         {
             throw new RootScanException(RootScanError.AccessDenied, "루트 폴더를 읽을 수 없습니다.", exception);
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            throw new RootScanException(
+                RootScanError.DirectoryNotFound,
+                "설정된 루트 폴더가 삭제되었습니다.",
+                exception);
         }
         catch (IOException exception)
         {
@@ -108,7 +136,7 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
             }
 
             var directory = new DirectoryInfo(path);
-            var files = EnumerateFiles(rootPath, path, warnings)
+            var files = EnumerateFiles(rootPath, path, warnings, isRoot: false)
                 .OrderBy(file => file.Name, NaturalNameComparer.OrdinalIgnoreCase)
                 .ToArray();
 
@@ -123,22 +151,43 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
     private static IEnumerable<DesktopFile> EnumerateFiles(
         string rootPath,
         string directoryPath,
-        ICollection<ScanWarning> warnings)
+        ICollection<ScanWarning> warnings,
+        bool isRoot)
     {
         IEnumerable<string> paths;
         try
         {
             paths = Directory.EnumerateFiles(directoryPath, "*", SearchOption.TopDirectoryOnly).ToArray();
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or System.Security.SecurityException)
         {
+            if (isRoot)
+            {
+                throw new RootScanException(
+                    RootScanError.AccessDenied,
+                    "루트 폴더를 읽을 수 없습니다.",
+                    exception);
+            }
+
             warnings.Add(new ScanWarning(
                 NormalizeRelativePath(rootPath, directoryPath),
                 ScanWarningCode.Inaccessible));
             yield break;
         }
-        catch (IOException)
+        catch (IOException exception)
         {
+            if (isRoot)
+            {
+                var error = Directory.Exists(directoryPath)
+                    ? RootScanError.IoFailure
+                    : RootScanError.DirectoryNotFound;
+                var message = error == RootScanError.DirectoryNotFound
+                    ? "설정된 루트 폴더가 삭제되었습니다."
+                    : "루트 폴더를 읽는 중 오류가 발생했습니다.";
+                throw new RootScanException(error, message, exception);
+            }
+
             warnings.Add(new ScanWarning(
                 NormalizeRelativePath(rootPath, directoryPath),
                 ScanWarningCode.DisappearedDuringScan));
@@ -153,18 +202,27 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
                 continue;
             }
 
-            FileInfo file;
+            string name;
+            string extension;
+            long length;
+            DateTimeOffset lastWriteTimeUtc;
             try
             {
-                file = new FileInfo(path);
+                var file = new FileInfo(path);
                 file.Refresh();
                 if (!file.Exists)
                 {
                     warnings.Add(new ScanWarning(relativePath, ScanWarningCode.DisappearedDuringScan));
                     continue;
                 }
+
+                name = file.Name;
+                extension = file.Extension;
+                length = file.Length;
+                lastWriteTimeUtc = file.LastWriteTimeUtc;
             }
-            catch (UnauthorizedAccessException)
+            catch (Exception exception) when (
+                exception is UnauthorizedAccessException or System.Security.SecurityException)
             {
                 warnings.Add(new ScanWarning(relativePath, ScanWarningCode.Inaccessible));
                 continue;
@@ -177,11 +235,11 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
 
             yield return new DesktopFile(
                 CreateId("file", relativePath),
-                file.Name,
+                name,
                 relativePath,
-                file.Extension,
-                file.Length,
-                file.LastWriteTimeUtc);
+                extension,
+                length,
+                lastWriteTimeUtc);
         }
     }
 
@@ -195,7 +253,8 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
         {
             attributes = File.GetAttributes(path);
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception exception) when (
+            exception is UnauthorizedAccessException or System.Security.SecurityException)
         {
             warnings.Add(new ScanWarning(relativePath, ScanWarningCode.Inaccessible));
             attributes = default;

@@ -9,12 +9,15 @@ WPF 기반 데스크톱 애플리케이션이다.
 
 ## 현재 상태
 
-- MVP 첫 read-only vertical slice 구현
+- M2 read-only 동기화 완성
 - WPF 애플리케이션이 제품 본체
 - Wallpaper Engine과 Lively는 선택 가능한 실행 호스트
 - Wallpaper Engine은 로컬 Application Wallpaper로 사용하며 공개 Workshop 배포는 범위 밖
 - 로컬 루트 얕은 snapshot, Dock, `…`, 단일 파일 모달과 숨은 설정 패널 구현
-- 파일 변경·Shell 메뉴·Wallpaper Engine 호스팅은 아직 비활성
+- Windows Shell 파일 아이콘, 비동기 이미지 썸네일 캐시와 대량 파일 가상화 구현
+- `FileSystemWatcher` debounce·전체 재스캔과 루트 삭제·복구 처리 구현
+- Dock 카드 drag 재정렬과 사용자 순서 저장 구현
+- 파일 변경 명령·Shell 메뉴·Wallpaper Engine 호스팅은 아직 비활성
 
 ## 기준 문서
 
@@ -46,12 +49,19 @@ $fixture = ./scripts/new-mvp-fixture.ps1
 ./scripts/run-standalone.ps1
 ```
 
+M2 기능을 함께 검증할 때는 다음 fixture를 사용한다.
+
+```powershell
+$fixture = ./scripts/new-m2-fixture.ps1
+./scripts/run-standalone.ps1 -RootPath $fixture.RootPath -Configuration Release
+```
+
 첫 실행에서는 설정 패널이 자동으로 열린다. `new-mvp-fixture.ps1`이 출력한 경로를
 `폴더 선택`에서 지정한다. 루트 설정 후에는 화면 우측 상단의 보이지 않는 영역을 1초간
 hover하면 설정 패널을 다시 열 수 있다.
 
-현재 vertical slice는 읽기 전용이다. fixture 또는 실제 루트에서 파일 이동·이름 변경·
-삭제를 시도하지 않는다.
+현재 vertical slice는 읽기 전용이다. 앱 내부에서 파일 이동·이름 변경·삭제를 제공하지
+않으며, watcher가 Explorer 등 외부 변경을 감지하면 실제 상태를 전체 재스캔한다.
 
 ## 개발·검증 흐름
 

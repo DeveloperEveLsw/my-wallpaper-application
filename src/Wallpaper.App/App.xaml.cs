@@ -3,6 +3,8 @@ using Wallpaper.App.Services;
 using Wallpaper.App.ViewModels;
 using Wallpaper.Core.Scanning;
 using Wallpaper.Infrastructure.Windows.Settings;
+using Wallpaper.Infrastructure.Windows.Visuals;
+using Wallpaper.Infrastructure.Windows.Watching;
 using Wallpaper.Rendering.Abstractions;
 
 namespace Wallpaper.App;
@@ -18,10 +20,13 @@ public partial class App : Application
         _renderLifecycle = new PlaceholderRenderLifecycle();
         await _renderLifecycle.StartAsync();
 
+        var settingsDirectory = Environment.GetEnvironmentVariable("WALLPAPER_SETTINGS_DIRECTORY");
         var viewModel = new MainViewModel(
             new ShallowDesktopScanner(),
-            new JsonAppSettingsStore(),
-            new WindowsFolderPicker());
+            new JsonAppSettingsStore(settingsDirectory),
+            new WindowsFolderPicker(),
+            new DebouncedFileSystemWatcher(),
+            new WindowsFileVisualService());
         var window = new MainWindow(viewModel);
         MainWindow = window;
         window.Show();

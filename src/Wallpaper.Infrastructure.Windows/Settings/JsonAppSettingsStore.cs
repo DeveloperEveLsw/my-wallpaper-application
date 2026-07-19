@@ -53,6 +53,10 @@ public sealed class JsonAppSettingsStore : IAppSettingsStore
         {
             return new AppSettingsLoadResult(AppSettings.Default, WasCorrupted: true);
         }
+        catch (System.Security.SecurityException)
+        {
+            return new AppSettingsLoadResult(AppSettings.Default, WasCorrupted: true);
+        }
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
