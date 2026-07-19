@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Wallpaper.App/Wallpaper.App.csproj" />
+    <Project Path="src/Wallpaper.Core/Wallpaper.Core.csproj" />
+    <Project Path="src/Wallpaper.Infrastructure.Windows/Wallpaper.Infrastructure.Windows.csproj" />
+    <Project Path="src/Wallpaper.Rendering.Abstractions/Wallpaper.Rendering.Abstractions.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Wallpaper.Core.Tests/Wallpaper.Core.Tests.csproj" />
+    <Project Path="tests/Wallpaper.Infrastructure.Windows.Tests/Wallpaper.Infrastructure.Windows.Tests.csproj" />
+  </Folder>
+</Solution>
