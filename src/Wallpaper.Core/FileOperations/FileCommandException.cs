@@ -28,6 +28,7 @@ public enum FileCommandError
     OpenFailed,
     ExplorerFailed,
     RenameFailed,
+    MoveFailed,
     RecycleFailed,
     RecycleCancelled,
 }

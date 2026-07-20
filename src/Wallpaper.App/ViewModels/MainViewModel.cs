@@ -35,6 +35,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly RelayCommand _beginRecycleCommand;
     private readonly AsyncRelayCommand _confirmRecycleCommand;
     private readonly RelayCommand _cancelRecycleCommand;
+    private readonly AsyncRelayCommand _confirmMoveCommand;
+    private readonly AsyncRelayCommand _cancelMoveCommand;
     private readonly RelayCommand _closeContextMenuCommand;
     private readonly RelayCommand _closeNotificationCommand;
     private CardViewModel _rootFilesCard;
@@ -69,6 +71,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string _recycleTitle = string.Empty;
     private string _recycleMessage = string.Empty;
     private string _recycleErrorMessage = string.Empty;
+    private FileMovePreparation? _pendingMove;
+    private bool _isMoveDialogOpen;
+    private string _moveMessage = string.Empty;
+    private string _moveName = string.Empty;
+    private string _moveValidationMessage = string.Empty;
     private bool _isNotificationOpen;
     private string _notificationText = string.Empty;
     private bool _notificationIsError;
@@ -114,6 +121,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             ConfirmRecycleAsync,
             () => _dialogTarget is not null && !IsBusy);
         _cancelRecycleCommand = new RelayCommand(CancelRecycle);
+        _confirmMoveCommand = new AsyncRelayCommand(
+            ConfirmMoveAsync,
+            () => CanConfirmMove && !IsBusy);
+        _cancelMoveCommand = new AsyncRelayCommand(
+            CancelMoveAsync,
+            () => IsMoveDialogOpen && !IsBusy);
         _closeContextMenuCommand = new RelayCommand(CloseItemContextMenu);
         _closeNotificationCommand = new RelayCommand(CloseNotification);
         OpenContextItemCommand = _openContextItemCommand;
@@ -124,6 +137,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         BeginRecycleCommand = _beginRecycleCommand;
         ConfirmRecycleCommand = _confirmRecycleCommand;
         CancelRecycleCommand = _cancelRecycleCommand;
+        ConfirmMoveCommand = _confirmMoveCommand;
+        CancelMoveCommand = _cancelMoveCommand;
         CloseContextMenuCommand = _closeContextMenuCommand;
         CloseNotificationCommand = _closeNotificationCommand;
         _changeWatcher.Changed += ChangeWatcher_OnChanged;
@@ -160,6 +175,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand ConfirmRecycleCommand { get; }
 
     public ICommand CancelRecycleCommand { get; }
+
+    public ICommand ConfirmMoveCommand { get; }
+
+    public ICommand CancelMoveCommand { get; }
 
     public ICommand CloseContextMenuCommand { get; }
 
@@ -319,6 +338,39 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _recycleErrorMessage, value);
     }
 
+    public bool IsMoveDialogOpen
+    {
+        get => _isMoveDialogOpen;
+        private set => SetProperty(ref _isMoveDialogOpen, value);
+    }
+
+    public string MoveMessage
+    {
+        get => _moveMessage;
+        private set => SetProperty(ref _moveMessage, value);
+    }
+
+    public string MoveName
+    {
+        get => _moveName;
+        set
+        {
+            if (SetProperty(ref _moveName, value))
+            {
+                ValidateMoveName();
+            }
+        }
+    }
+
+    public string MoveValidationMessage
+    {
+        get => _moveValidationMessage;
+        private set => SetProperty(ref _moveValidationMessage, value);
+    }
+
+    public bool CanConfirmMove =>
+        _pendingMove is not null && WindowsFileNameValidator.Validate(MoveName).IsValid;
+
     public bool IsNotificationOpen
     {
         get => _isNotificationOpen;
@@ -337,7 +389,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _notificationIsError, value);
     }
 
-    public string HostStatus => "Standalone · M3 basic file commands";
+    public string HostStatus => "Standalone · M4 internal file drag & drop";
 
     public async Task InitializeAsync()
     {
@@ -400,6 +452,106 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         foreach (var card in FolderCards)
         {
             card.ClearReorderTarget();
+        }
+    }
+
+    public bool CanMoveFileToCard(FileCommandTarget source, CardViewModel destinationCard)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destinationCard);
+
+        if (IsBusy || RootPath is null || source.Kind != FileCommandItemKind.File ||
+            !string.Equals(source.RootPath, RootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var isCurrentCard = destinationCard.IsVirtual
+            ? ReferenceEquals(destinationCard, RootFilesCard)
+            : FolderCards.Contains(destinationCard);
+        if (!isCurrentCard ||
+            (!destinationCard.IsVirtual && string.IsNullOrWhiteSpace(destinationCard.RelativePath)))
+        {
+            return false;
+        }
+
+        var sourceParent = GetRelativeParent(source.RelativePath);
+        var destinationParent = destinationCard.IsVirtual ? null : destinationCard.RelativePath;
+        return !string.Equals(sourceParent, destinationParent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void SetFileDropTarget(CardViewModel card, bool isValid)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        ClearFileDropTargets();
+        card.SetFileDropTarget(isValid);
+    }
+
+    public void ClearFileDropTargets()
+    {
+        foreach (var card in FolderCards)
+        {
+            card.ClearFileDropTarget();
+        }
+
+        RootFilesCard.ClearFileDropTarget();
+    }
+
+    public async Task DropFileOnCardAsync(FileCommandTarget source, CardViewModel destinationCard)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destinationCard);
+        if (!CanMoveFileToCard(source, destinationCard))
+        {
+            await RecoverAfterFileDragCancellationAsync();
+            return;
+        }
+
+        var destination = new FileMoveDestination(
+            source.RootPath,
+            destinationCard.IsVirtual ? null : destinationCard.RelativePath);
+        CloseItemTransientUi();
+        CloseNotification();
+        IsBusy = true;
+        try
+        {
+            var preparation = await _fileCommandService.PrepareMoveAsync(
+                source,
+                destination,
+                source.Name);
+            if (preparation.HasNameCollision)
+            {
+                OpenMoveDialog(
+                    preparation,
+                    "같은 이름이 있어 사용 가능한 이름을 제안했습니다.");
+                return;
+            }
+
+            await CompleteMoveAsync(preparation, preparation.ProposedName);
+        }
+        catch (FileCommandException exception) when (exception.Error == FileCommandError.NameCollision)
+        {
+            await RescanAsync();
+            await RefreshMoveCollisionAsync(source, destination, source.Name);
+        }
+        catch (FileCommandException exception)
+        {
+            ShowNotification(exception.Message, isError: true);
+            await RescanAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public async Task RecoverAfterFileDragCancellationAsync()
+    {
+        ClearFileDropTargets();
+        if (HasRoot && !IsBusy)
+        {
+            StatusText = "파일 이동을 취소해 실제 상태를 다시 확인하는 중…";
+            await RescanAsync();
         }
     }
 
@@ -469,6 +621,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public void CloseTransientUi()
     {
+        if (IsMoveDialogOpen)
+        {
+            CancelMoveCore();
+            _ = RescanAsync();
+            return;
+        }
+
         if (IsRenameDialogOpen)
         {
             CancelRename();
@@ -751,6 +910,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         CancelRenameCore();
         CancelRecycleCore();
+        CancelMoveCore();
         IsSettingsOpen = false;
         _contextTarget = target;
         _contextCard = card;
@@ -841,6 +1001,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        CancelMoveCore();
         _dialogTarget = target;
         CloseItemContextMenu();
         RenameText = target.Name;
@@ -980,6 +1141,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        CancelMoveCore();
         _dialogTarget = target;
         CloseItemContextMenu();
         RecycleTitle = "휴지통으로 이동할까요?";
@@ -1090,6 +1252,157 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void OpenMoveDialog(FileMovePreparation preparation, string validationMessage)
+    {
+        CancelRenameCore();
+        CancelRecycleCore();
+        CloseItemContextMenu();
+        IsSettingsOpen = false;
+        _pendingMove = preparation;
+        MoveMessage = preparation.Destination.RelativeFolderPath is null
+            ? $"'{preparation.Source.Name}' 파일을 … 카드의 루트 위치로 이동합니다."
+            : $"'{preparation.Source.Name}' 파일을 '{preparation.Destination.RelativeFolderPath}' 폴더로 이동합니다.";
+        MoveName = preparation.ProposedName;
+        MoveValidationMessage = validationMessage;
+        IsMoveDialogOpen = true;
+        ValidateMoveName();
+        if (!string.IsNullOrWhiteSpace(validationMessage) &&
+            WindowsFileNameValidator.Validate(MoveName).IsValid)
+        {
+            MoveValidationMessage = validationMessage;
+        }
+
+        NotifyCommandStates();
+    }
+
+    private async Task ConfirmMoveAsync()
+    {
+        var preparation = _pendingMove;
+        var destinationName = MoveName;
+        if (preparation is null || !CanConfirmMove)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await CompleteMoveAsync(preparation, destinationName);
+        }
+        catch (FileCommandException exception) when (exception.Error == FileCommandError.NameCollision)
+        {
+            await RescanAsync();
+            await RefreshMoveCollisionAsync(
+                preparation.Source,
+                preparation.Destination,
+                destinationName);
+        }
+        catch (FileCommandException exception)
+        {
+            MoveValidationMessage = exception.Message;
+            var targetIsStale = exception.Error is
+                FileCommandError.InvalidTarget or
+                FileCommandError.TargetMissing or
+                FileCommandError.UnsupportedTarget or
+                FileCommandError.NoChange;
+            if (targetIsStale)
+            {
+                CancelMoveCore();
+                ShowNotification(exception.Message, isError: true);
+            }
+
+            await RescanAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task CompleteMoveAsync(
+        FileMovePreparation preparation,
+        string destinationName)
+    {
+        var movedTarget = await _fileCommandService.MoveAsync(
+            preparation.Source,
+            preparation.Destination,
+            destinationName);
+        CancelMoveCore();
+        _selectedFileId = DesktopItemId.ForFile(movedTarget.RelativePath);
+        await RescanAsync();
+
+        var message = _isRootAvailable
+            ? $"'{preparation.Source.Name}'을(를) '{movedTarget.Name}' 이름으로 이동했습니다."
+            : "파일은 이동했지만 현재 snapshot을 확인하지 못했습니다. 루트 상태를 확인해 주세요.";
+        StatusText = message;
+        ShowNotification(message, isError: !_isRootAvailable);
+    }
+
+    private async Task RefreshMoveCollisionAsync(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string attemptedName)
+    {
+        try
+        {
+            var refreshed = await _fileCommandService.PrepareMoveAsync(
+                source,
+                destination,
+                attemptedName);
+            OpenMoveDialog(
+                refreshed,
+                refreshed.HasNameCollision
+                    ? "확정 직전에 이름 충돌이 발생해 새 이름을 제안했습니다."
+                    : "외부 변경을 반영했습니다. 이름을 확인한 뒤 다시 이동해 주세요.");
+        }
+        catch (FileCommandException exception)
+        {
+            CancelMoveCore();
+            ShowNotification(exception.Message, isError: true);
+        }
+    }
+
+    private async Task CancelMoveAsync()
+    {
+        if (!IsMoveDialogOpen || IsBusy)
+        {
+            return;
+        }
+
+        CancelMoveCore();
+        StatusText = "파일 이동을 취소해 실제 상태를 다시 확인하는 중…";
+        await RescanAsync();
+    }
+
+    private void CancelMoveCore()
+    {
+        IsMoveDialogOpen = false;
+        _pendingMove = null;
+        MoveMessage = string.Empty;
+        MoveName = string.Empty;
+        MoveValidationMessage = string.Empty;
+        NotifyCommandStates();
+    }
+
+    private void ValidateMoveName()
+    {
+        var validation = WindowsFileNameValidator.Validate(MoveName);
+        MoveValidationMessage = validation.IsValid
+            ? string.Empty
+            : WindowsFileCommandService.CreateInvalidNameMessage(validation.Error);
+        OnPropertyChanged(nameof(CanConfirmMove));
+        _confirmMoveCommand.NotifyCanExecuteChanged();
+    }
+
+    private static string? GetRelativeParent(string relativePath)
+    {
+        var parent = Path.GetDirectoryName(
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        return string.IsNullOrEmpty(parent)
+            ? null
+            : parent.Replace(Path.DirectorySeparatorChar, '/');
+    }
+
     private void ShowNotification(string message, bool isError)
     {
         NotificationText = message;
@@ -1109,6 +1422,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         CloseItemContextMenu();
         CancelRenameCore();
         CancelRecycleCore();
+        CancelMoveCore();
     }
 
     private void ChangeWatcher_OnChanged(object? sender, RootChangedEventArgs args)
@@ -1234,6 +1548,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _confirmRenameCommand.NotifyCanExecuteChanged();
         _beginRecycleCommand.NotifyCanExecuteChanged();
         _confirmRecycleCommand.NotifyCanExecuteChanged();
+        _confirmMoveCommand.NotifyCanExecuteChanged();
+        _cancelMoveCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanConfirmRename));
+        OnPropertyChanged(nameof(CanConfirmMove));
     }
 }

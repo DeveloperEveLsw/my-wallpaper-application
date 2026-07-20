@@ -9,7 +9,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 
 ## 현재 상태
 
-- M3 기본 파일 명령 구현 완료, Windows 사용자 검수 준비
+- M4 내부 파일 drag & drop 구현 완료, Windows 사용자 검수 준비
 - WPF 애플리케이션이 제품 본체
 - Wallpaper Engine과 Lively는 선택 가능한 실행 호스트
 - Wallpaper Engine은 로컬 Application Wallpaper로 사용하며 공개 Workshop 배포는 범위 밖
@@ -20,6 +20,8 @@ WPF 기반 데스크톱 애플리케이션이다.
 - 파일 선택·더블클릭 실행과 파일·폴더 Glass 우클릭 메뉴 구현
 - Windows 이름 검증을 거치는 파일·폴더 이름 변경 구현
 - Glass 확인 모달과 `IFileOperation`을 이용한 Windows 휴지통 이동 구현
+- `…` ↔ 폴더와 폴더 ↔ 폴더 파일 이동, drag preview와 유효·무효 대상 표시 구현
+- 덮어쓰기 없는 충돌 이름 제안·편집 모달과 이동 뒤 전체 재스캔 복구 구현
 - `Windows 추가 옵션 표시`·바탕화면 Shell 메뉴·Wallpaper Engine 호스팅은 후속 단계
 
 ## 기준 문서
@@ -68,13 +70,22 @@ $fixture = ./scripts/new-m3-fixture.ps1
 
 세부 항목은 [M3 검수 체크리스트](docs/m3-validation.md)를 따른다.
 
+M4 내부 파일 이동은 전용 충돌·잠금 fixture에서 검수한다.
+
+```powershell
+$fixture = ./scripts/new-m4-fixture.ps1
+./scripts/run-standalone.ps1 -RootPath $fixture.RootPath -Configuration Release
+```
+
+세부 항목은 [M4 검수 체크리스트](docs/m4-validation.md)를 따른다.
+
 첫 실행에서는 설정 패널이 자동으로 열린다. `new-mvp-fixture.ps1`이 출력한 경로를
 `폴더 선택`에서 지정한다. 루트 설정 후에는 화면 우측 상단의 보이지 않는 영역을 1초간
 hover하면 설정 패널을 다시 열 수 있다.
 
-현재 vertical slice는 파일·폴더 열기, 탐색기 위치 열기, 이름 변경과 휴지통 이동을
-제공한다. 카드 사이 파일 이동은 M4, 네이티브 Windows 추가 옵션과 바탕화면 메뉴는
-M5에서 추가한다. 모든 변경 뒤에는 실제 파일 시스템을 전체 재스캔한다.
+현재 vertical slice는 파일·폴더 열기, 탐색기 위치 열기, 이름 변경, 휴지통 이동과
+카드 사이 내부 파일 drag & drop을 제공한다. 네이티브 Windows 추가 옵션과 바탕화면
+메뉴는 M5에서 추가한다. 모든 변경 뒤에는 실제 파일 시스템을 전체 재스캔한다.
 
 ## 개발·검증 흐름
 

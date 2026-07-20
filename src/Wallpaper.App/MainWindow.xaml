@@ -212,8 +212,10 @@
                                                         Padding="8"
                                                         CornerRadius="16"
                                                         Cursor="Hand"
+                                                        GiveFeedback="FileTile_OnGiveFeedback"
                                                         MouseLeftButtonDown="FileTile_OnMouseLeftButtonDown"
                                                         MouseRightButtonDown="FileTile_OnMouseRightButtonDown"
+                                                        PreviewMouseMove="FileTile_OnPreviewMouseMove"
                                                         ToolTip="{Binding Name}">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
@@ -352,6 +354,36 @@
                                                                TextAlignment="Center"
                                                                TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
+                                                <Border x:Name="ValidFileDropIndicator"
+                                                        Padding="6"
+                                                        Background="#D0357555"
+                                                        BorderBrush="#D99BE7B8"
+                                                        BorderThickness="2"
+                                                        CornerRadius="14"
+                                                        IsHitTestVisible="False"
+                                                        Visibility="Collapsed">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Text="여기로 이동"
+                                                               TextAlignment="Center" />
+                                                </Border>
+                                                <Border x:Name="InvalidFileDropIndicator"
+                                                        Padding="6"
+                                                        Background="#D06B2E36"
+                                                        BorderBrush="#E7FF9CA5"
+                                                        BorderThickness="2"
+                                                        CornerRadius="14"
+                                                        IsHitTestVisible="False"
+                                                        Visibility="Collapsed">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Text="이동 불가"
+                                                               TextAlignment="Center" />
+                                                </Border>
                                                 <Border x:Name="InsertBeforeIndicator"
                                                         Width="3"
                                                         Margin="-5,7,0,7"
@@ -374,6 +406,12 @@
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding ShowInsertAfter}" Value="True">
                                                 <Setter TargetName="InsertAfterIndicator" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsFileDropTargetValid}" Value="True">
+                                                <Setter TargetName="ValidFileDropIndicator" Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsFileDropTargetInvalid}" Value="True">
+                                                <Setter TargetName="InvalidFileDropIndicator" Property="Visibility" Value="Visible" />
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
@@ -408,36 +446,89 @@
                             Background="#5AFFFFFF" />
 
                     <Button Grid.Column="2"
-                            AutomationProperties.AutomationId="virtual:root-files"
-                            Command="{Binding OpenCardCommand}"
-                            CommandParameter="{Binding RootFilesCard}"
+                            AllowDrop="True"
+                            AutomationProperties.AutomationId="{Binding Id}"
+                            Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding}"
+                            DataContext="{Binding RootFilesCard}"
+                            DragLeave="DockCard_OnDragLeave"
+                            DragOver="DockCard_OnDragOver"
+                            Drop="DockCard_OnDrop"
                             Style="{StaticResource CardButtonStyle}">
-                        <StackPanel>
-                            <Border Width="58"
-                                    Height="58"
-                                    HorizontalAlignment="Center"
-                                    Background="#16FFFFFF"
-                                    BorderBrush="#52FFFFFF"
-                                    BorderThickness="1"
-                                    CornerRadius="18">
+                        <Grid>
+                            <StackPanel>
+                                <Border Width="58"
+                                        Height="58"
+                                        HorizontalAlignment="Center"
+                                        Background="#16FFFFFF"
+                                        BorderBrush="#52FFFFFF"
+                                        BorderThickness="1"
+                                        CornerRadius="18">
+                                    <TextBlock HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               FontFamily="Segoe UI Variable Display"
+                                               FontSize="32"
+                                               FontWeight="Light"
+                                               Text="…" />
+                                </Border>
+                                <TextBlock Margin="0,5,0,0"
+                                           HorizontalAlignment="Center"
+                                           FontSize="12"
+                                           Text="…" />
+                            </StackPanel>
+                            <Border Padding="6"
+                                    Background="#D0357555"
+                                    BorderBrush="#D99BE7B8"
+                                    BorderThickness="2"
+                                    CornerRadius="14"
+                                    IsHitTestVisible="False">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsFileDropTargetValid}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <TextBlock HorizontalAlignment="Center"
                                            VerticalAlignment="Center"
-                                           FontFamily="Segoe UI Variable Display"
-                                           FontSize="32"
-                                           FontWeight="Light"
-                                           Text="…" />
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Text="루트로 이동"
+                                           TextAlignment="Center" />
                             </Border>
-                            <TextBlock Margin="0,5,0,0"
-                                       HorizontalAlignment="Center"
-                                       FontSize="12"
-                                       Text="…" />
-                        </StackPanel>
+                            <Border Padding="6"
+                                    Background="#D06B2E36"
+                                    BorderBrush="#E7FF9CA5"
+                                    BorderThickness="2"
+                                    CornerRadius="14"
+                                    IsHitTestVisible="False">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsFileDropTargetInvalid}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Text="이동 불가"
+                                           TextAlignment="Center" />
+                            </Border>
+                        </Grid>
                     </Button>
                 </Grid>
             </Border>
         </Grid>
 
-        <!-- Transient Layer: M3 item commands. -->
+        <!-- Transient Layer: item commands and M4 file move UI. -->
         <Canvas Panel.ZIndex="4"
                 Visibility="{Binding IsItemContextMenuOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="260"
@@ -496,6 +587,70 @@
                 </StackPanel>
             </Border>
         </Canvas>
+
+        <Grid Panel.ZIndex="5"
+              Background="#85070B13"
+              Visibility="{Binding IsMoveDialogOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Width="470"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="#F21A2131"
+                    BorderBrush="#70FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="24">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="38" Opacity="0.5" ShadowDepth="12" />
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitleStyle}" Text="이동할 이름 확인" />
+                    <TextBlock Margin="0,9,0,6"
+                               Foreground="#D7E2ECF7"
+                               Text="{Binding MoveMessage}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Margin="0,0,0,16"
+                               FontSize="12"
+                               Foreground="#AFC2D2E8"
+                               Text="기존 항목은 덮어쓰지 않습니다. 제안 이름을 직접 편집할 수 있습니다."
+                               TextWrapping="Wrap" />
+                    <TextBox x:Name="MoveTextBox"
+                             AutomationProperties.AutomationId="MoveNameInput"
+                             MinHeight="44"
+                             Padding="12,9"
+                             Loaded="MoveTextBox_OnLoaded"
+                             Background="#24FFFFFF"
+                             BorderBrush="#5AFFFFFF"
+                             BorderThickness="1"
+                             CaretBrush="#FFFFFF"
+                             FontSize="14"
+                             Foreground="#F7F9FF"
+                             MaxLength="255"
+                             Text="{Binding MoveName, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock MinHeight="20"
+                               Margin="2,8,2,0"
+                               FontSize="12"
+                               Foreground="#FFFFC278"
+                               Text="{Binding MoveValidationMessage}"
+                               TextWrapping="Wrap" />
+                    <StackPanel Margin="0,20,0,0"
+                                HorizontalAlignment="Right"
+                                Orientation="Horizontal">
+                        <Button IsCancel="True"
+                                AutomationProperties.AutomationId="MoveCancel"
+                                Command="{Binding CancelMoveCommand}"
+                                Content="취소"
+                                Style="{StaticResource GlassButtonStyle}" />
+                        <Button Margin="8,0,0,0"
+                                AutomationProperties.AutomationId="MoveConfirm"
+                                IsDefault="True"
+                                IsEnabled="{Binding CanConfirmMove}"
+                                Command="{Binding ConfirmMoveCommand}"
+                                Content="이동"
+                                Style="{StaticResource GlassButtonStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <Grid Panel.ZIndex="5"
               Background="#85070B13"
@@ -638,6 +793,43 @@
                         Content="×"
                         Style="{StaticResource GlassButtonStyle}" />
             </Grid>
+        </Border>
+
+        <Border x:Name="FileDragPreview"
+                Width="250"
+                Panel.ZIndex="7"
+                Padding="12,9"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="#F01A2131"
+                BorderBrush="#9FB9DAFF"
+                BorderThickness="1"
+                CornerRadius="14"
+                IsHitTestVisible="False"
+                Opacity="0.94"
+                Visibility="Collapsed">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="FileDragPreviewTransform" />
+            </Border.RenderTransform>
+            <StackPanel Orientation="Horizontal">
+                <Border Width="30"
+                        Height="30"
+                        Background="#3D6FA8E8"
+                        CornerRadius="9">
+                    <TextBlock HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               Text="→" />
+                </Border>
+                <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock FontSize="11" Foreground="#AFC2D2E8" Text="파일 이동" />
+                    <TextBlock x:Name="FileDragPreviewName"
+                               MaxWidth="185"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </StackPanel>
         </Border>
 
         <!-- Transient Layer: hidden settings panel. -->

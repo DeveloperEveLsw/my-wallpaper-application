@@ -66,6 +66,33 @@ public static class FileCommandTargetValidator
             Path.GetFileName(absolutePath));
     }
 
+    public static ValidatedFileMoveDestination ValidateMoveDestination(
+        FileMoveDestination destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+
+        var normalizedRoot = NormalizeRoot(destination.RootPath);
+        EnsureSupportedDirectory(normalizedRoot, isRoot: true);
+
+        if (destination.RelativeFolderPath is null)
+        {
+            return new ValidatedFileMoveDestination(destination, normalizedRoot, normalizedRoot);
+        }
+
+        var segments = ParseRelativePath(destination.RelativeFolderPath);
+        if (segments.Length != 1)
+        {
+            throw new FileCommandException(
+                FileCommandError.InvalidTarget,
+                "파일 이동 대상은 루트 또는 루트의 직접 자식 폴더여야 합니다.");
+        }
+
+        var absolutePath = Path.GetFullPath(Path.Combine(normalizedRoot, segments[0]));
+        EnsureInsideRoot(normalizedRoot, absolutePath);
+        EnsureSupportedDirectory(absolutePath, isRoot: false);
+        return new ValidatedFileMoveDestination(destination, normalizedRoot, absolutePath);
+    }
+
     private static string NormalizeRoot(string rootPath)
     {
         if (string.IsNullOrWhiteSpace(rootPath) || !Path.IsPathFullyQualified(rootPath))

@@ -4,17 +4,21 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Wallpaper.App.ViewModels;
+using Wallpaper.Core.FileOperations;
 
 namespace Wallpaper.App;
 
 public partial class MainWindow : Window
 {
     private const string DockCardDataFormat = "Wallpaper.DockCardId";
+    private const string FileMoveDataFormat = "Wallpaper.InternalFileMove";
 
     private readonly DispatcherTimer _clockTimer;
     private readonly DispatcherTimer _settingsHoverTimer;
     private Point _dockDragStart;
     private string? _dockDragCardId;
+    private Point _fileDragStart;
+    private FileCommandTarget? _fileDragSource;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -166,9 +170,73 @@ public partial class MainWindow : Window
         ViewModel.SelectFile(file);
         if (e.ClickCount >= 2)
         {
+            _fileDragSource = null;
             await ViewModel.OpenFileAsync(file);
         }
+        else if (ViewModel.RootPath is not null && !ViewModel.IsBusy)
+        {
+            _fileDragStart = e.GetPosition(this);
+            _fileDragSource = new FileCommandTarget(
+                ViewModel.RootPath,
+                file.RelativePath,
+                FileCommandItemKind.File);
+        }
 
+        e.Handled = true;
+    }
+
+    private async void FileTile_OnPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        var source = _fileDragSource;
+        if (e.LeftButton != MouseButtonState.Pressed ||
+            source is null ||
+            sender is not Border { DataContext: FileTileViewModel file } tile ||
+            !string.Equals(source.RelativePath, file.RelativePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var current = e.GetPosition(this);
+        if (Math.Abs(current.X - _fileDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(current.Y - _fileDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        _fileDragSource = null;
+        var data = new DataObject();
+        data.SetData(FileMoveDataFormat, new FileDragPayload(source));
+        ViewModel.ClearReorderTargets();
+        ViewModel.ClearFileDropTargets();
+        ShowFileDragPreview(file.Name, current);
+
+        DragDropEffects result;
+        try
+        {
+            result = DragDrop.DoDragDrop(tile, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            HideFileDragPreview();
+            ViewModel.ClearFileDropTargets();
+        }
+
+        if (result == DragDropEffects.None)
+        {
+            await ViewModel.RecoverAfterFileDragCancellationAsync();
+        }
+
+        e.Handled = true;
+    }
+
+    private void FileTile_OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
+    {
+        if (FileDragPreview.Visibility == Visibility.Visible)
+        {
+            UpdateFileDragPreview(Mouse.GetPosition(CompositionRoot));
+        }
+
+        e.UseDefaultCursors = true;
         e.Handled = true;
     }
 
@@ -183,6 +251,15 @@ public partial class MainWindow : Window
     }
 
     private void RenameTextBox_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox)
+        {
+            textBox.Focus();
+            textBox.SelectAll();
+        }
+    }
+
+    private void MoveTextBox_OnLoaded(object sender, RoutedEventArgs e)
     {
         if (sender is TextBox textBox)
         {
@@ -243,7 +320,25 @@ public partial class MainWindow : Window
 
     private void DockCard_OnDragOver(object sender, DragEventArgs e)
     {
-        if (sender is not Button { DataContext: CardViewModel target } button ||
+        if (sender is not Button { DataContext: CardViewModel target } button)
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        if (TryGetDraggedFile(e.Data, out var filePayload))
+        {
+            var isValid = ViewModel.CanMoveFileToCard(filePayload.Source, target);
+            ViewModel.ClearReorderTargets();
+            ViewModel.SetFileDropTarget(target, isValid);
+            UpdateFileDragPreview(e.GetPosition(CompositionRoot));
+            e.Effects = isValid ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        if (target.IsVirtual ||
             !TryGetDraggedCardId(e.Data, out var sourceId) ||
             string.Equals(sourceId, target.Id, StringComparison.OrdinalIgnoreCase))
         {
@@ -263,12 +358,34 @@ public partial class MainWindow : Window
         if (sender is Button { DataContext: CardViewModel card })
         {
             card.ClearReorderTarget();
+            card.ClearFileDropTarget();
         }
     }
 
     private async void DockCard_OnDrop(object sender, DragEventArgs e)
     {
-        if (sender is not Button { DataContext: CardViewModel target } ||
+        if (sender is not Button { DataContext: CardViewModel target })
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        if (TryGetDraggedFile(e.Data, out var filePayload))
+        {
+            var isValid = ViewModel.CanMoveFileToCard(filePayload.Source, target);
+            ViewModel.ClearFileDropTargets();
+            e.Effects = isValid ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
+            if (isValid)
+            {
+                await ViewModel.DropFileOnCardAsync(filePayload.Source, target);
+            }
+
+            return;
+        }
+
+        if (target.IsVirtual ||
             !TryGetDraggedCardId(e.Data, out var sourceId) ||
             string.Equals(sourceId, target.Id, StringComparison.OrdinalIgnoreCase))
         {
@@ -282,6 +399,19 @@ public partial class MainWindow : Window
         e.Effects = DragDropEffects.Move;
         e.Handled = true;
         await ViewModel.ReorderFolderCardAsync(sourceId, target.Id, insertAfter);
+    }
+
+    private static bool TryGetDraggedFile(IDataObject data, out FileDragPayload payload)
+    {
+        payload = null!;
+        if (!data.GetDataPresent(FileMoveDataFormat) ||
+            data.GetData(FileMoveDataFormat) is not FileDragPayload value)
+        {
+            return false;
+        }
+
+        payload = value;
+        return true;
     }
 
     private static bool TryGetDraggedCardId(IDataObject data, out string cardId)
@@ -310,6 +440,37 @@ public partial class MainWindow : Window
             Math.Clamp(position.Y, margin, maxTop));
     }
 
+    private void ShowFileDragPreview(string fileName, Point position)
+    {
+        FileDragPreviewName.Text = fileName;
+        FileDragPreview.Visibility = Visibility.Visible;
+        FileDragPreview.UpdateLayout();
+        UpdateFileDragPreview(position);
+    }
+
+    private void UpdateFileDragPreview(Point position)
+    {
+        const double previewWidth = 250;
+        const double previewHeight = 52;
+        const double offset = 18;
+        const double margin = 12;
+
+        FileDragPreviewTransform.X = Math.Clamp(
+            position.X + offset,
+            margin,
+            Math.Max(margin, CompositionRoot.ActualWidth - previewWidth - margin));
+        FileDragPreviewTransform.Y = Math.Clamp(
+            position.Y + offset,
+            margin,
+            Math.Max(margin, CompositionRoot.ActualHeight - previewHeight - margin));
+    }
+
+    private void HideFileDragPreview()
+    {
+        FileDragPreview.Visibility = Visibility.Collapsed;
+        FileDragPreviewName.Text = string.Empty;
+    }
+
     private void UpdateDockWidth()
     {
         if (DockContainer is not null && ActualWidth > 0)
@@ -317,4 +478,6 @@ public partial class MainWindow : Window
             DockContainer.MaxWidth = Math.Max(640, ActualWidth * 0.8);
         }
     }
+
+    private sealed record FileDragPayload(FileCommandTarget Source);
 }

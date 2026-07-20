@@ -77,4 +77,46 @@ public sealed class FileCommandTargetValidatorTests
         Assert.Equal(FileCommandError.TargetMissing, missing.Error);
         Assert.Equal(FileCommandError.InvalidTarget, wrongKind.Error);
     }
+
+    [Fact]
+    public void ValidateMoveDestination_AcceptsRootAndDirectChildFolder()
+    {
+        using var fixture = new TemporaryDirectory();
+        var folderPath = fixture.CreateDirectory("Work");
+
+        var root = FileCommandTargetValidator.ValidateMoveDestination(
+            new FileMoveDestination(fixture.Path, null));
+        var folder = FileCommandTargetValidator.ValidateMoveDestination(
+            new FileMoveDestination(fixture.Path, "Work"));
+
+        Assert.Equal(fixture.Path, root.AbsolutePath);
+        Assert.Equal(folderPath, folder.AbsolutePath);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("../Outside")]
+    [InlineData("Work/Nested")]
+    public void ValidateMoveDestination_RejectsInvalidOrUnsupportedDepth(string relativePath)
+    {
+        using var fixture = new TemporaryDirectory();
+
+        var exception = Assert.Throws<FileCommandException>(() =>
+            FileCommandTargetValidator.ValidateMoveDestination(
+                new FileMoveDestination(fixture.Path, relativePath)));
+
+        Assert.Equal(FileCommandError.InvalidTarget, exception.Error);
+    }
+
+    [Fact]
+    public void ValidateMoveDestination_RejectsMissingFolder()
+    {
+        using var fixture = new TemporaryDirectory();
+
+        var exception = Assert.Throws<FileCommandException>(() =>
+            FileCommandTargetValidator.ValidateMoveDestination(
+                new FileMoveDestination(fixture.Path, "Missing")));
+
+        Assert.Equal(FileCommandError.TargetMissing, exception.Error);
+    }
 }

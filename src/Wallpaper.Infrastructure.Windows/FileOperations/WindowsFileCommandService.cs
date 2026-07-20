@@ -103,6 +103,24 @@ public sealed class WindowsFileCommandService : IFileCommandService
             () => RenameCore(target, newName, cancellationToken),
             cancellationToken);
 
+    public Task<FileMovePreparation> PrepareMoveAsync(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string desiredName,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () => PrepareMoveCore(source, destination, desiredName, cancellationToken),
+            cancellationToken);
+
+    public Task<FileCommandTarget> MoveAsync(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string destinationName,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () => MoveCore(source, destination, destinationName, cancellationToken),
+            cancellationToken);
+
     public Task RecycleAsync(FileCommandTarget target, CancellationToken cancellationToken = default)
     {
         if (!OperatingSystem.IsWindows())
@@ -196,6 +214,166 @@ public sealed class WindowsFileCommandService : IFileCommandService
         _ = FileCommandTargetValidator.ValidateExisting(renamedTarget);
         return renamedTarget;
     }
+
+    private static FileMovePreparation PrepareMoveCore(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string desiredName,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var (validatedSource, validatedDestination) = ValidateMoveEndpoints(source, destination);
+        ValidateMoveName(desiredName);
+        EnsureDifferentParent(validatedSource, validatedDestination);
+
+        var existingNames = EnumerateDestinationNames(validatedDestination.AbsolutePath);
+        string proposedName;
+        try
+        {
+            proposedName = CollisionNameGenerator.ProposeAvailableFileName(desiredName, existingNames);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new FileCommandException(
+                FileCommandError.InvalidName,
+                "확장자를 보존한 사용 가능한 충돌 이름을 만들 수 없습니다.",
+                exception);
+        }
+        return new FileMovePreparation(
+            source,
+            destination,
+            desiredName,
+            proposedName,
+            !string.Equals(desiredName, proposedName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static FileCommandTarget MoveCore(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string destinationName,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var (validatedSource, validatedDestination) = ValidateMoveEndpoints(source, destination);
+        ValidateMoveName(destinationName);
+        EnsureDifferentParent(validatedSource, validatedDestination);
+
+        if (DestinationContainsName(validatedDestination.AbsolutePath, destinationName))
+        {
+            throw new FileCommandException(
+                FileCommandError.NameCollision,
+                "이동할 위치에 동일한 이름의 항목이 이미 있습니다.");
+        }
+
+        (validatedSource, validatedDestination) = ValidateMoveEndpoints(source, destination);
+        EnsureDifferentParent(validatedSource, validatedDestination);
+
+        var destinationPath = Path.Combine(validatedDestination.AbsolutePath, destinationName);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(validatedSource.AbsolutePath, destinationPath, overwrite: false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            if (DestinationContainsName(validatedDestination.AbsolutePath, destinationName))
+            {
+                throw new FileCommandException(
+                    FileCommandError.NameCollision,
+                    "이동할 위치에 동일한 이름의 항목이 이미 있습니다.",
+                    exception);
+            }
+
+            throw new FileCommandException(
+                FileCommandError.MoveFailed,
+                "파일을 이동하지 못했습니다. 파일 잠금과 폴더 권한을 확인해 주세요.",
+                exception);
+        }
+
+        var movedRelativePath = destination.RelativeFolderPath is null
+            ? destinationName
+            : Path.Combine(destination.RelativeFolderPath, destinationName);
+        var movedTarget = source with
+        {
+            RelativePath = movedRelativePath.Replace(Path.DirectorySeparatorChar, '/'),
+        };
+        _ = FileCommandTargetValidator.ValidateExisting(movedTarget);
+        return movedTarget;
+    }
+
+    private static (ValidatedFileCommandTarget Source, ValidatedFileMoveDestination Destination)
+        ValidateMoveEndpoints(FileCommandTarget source, FileMoveDestination destination)
+    {
+        var validatedSource = FileCommandTargetValidator.ValidateExisting(source);
+        if (source.Kind != FileCommandItemKind.File)
+        {
+            throw new FileCommandException(
+                FileCommandError.InvalidTarget,
+                "M4에서는 파일만 카드 사이에서 이동할 수 있습니다.");
+        }
+
+        var validatedDestination = FileCommandTargetValidator.ValidateMoveDestination(destination);
+        if (!string.Equals(
+                validatedSource.RootPath,
+                validatedDestination.RootPath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FileCommandException(
+                FileCommandError.InvalidTarget,
+                "현재 루트 밖으로 파일을 이동할 수 없습니다.");
+        }
+
+        return (validatedSource, validatedDestination);
+    }
+
+    private static void ValidateMoveName(string destinationName)
+    {
+        var validation = WindowsFileNameValidator.Validate(destinationName);
+        if (!validation.IsValid)
+        {
+            throw new FileCommandException(
+                FileCommandError.InvalidName,
+                CreateInvalidNameMessage(validation.Error));
+        }
+    }
+
+    private static void EnsureDifferentParent(
+        ValidatedFileCommandTarget source,
+        ValidatedFileMoveDestination destination)
+    {
+        if (string.Equals(source.ParentPath, destination.AbsolutePath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FileCommandException(
+                FileCommandError.NoChange,
+                "파일이 이미 선택한 카드에 있습니다.");
+        }
+    }
+
+    private static IReadOnlyList<string> EnumerateDestinationNames(string destinationPath)
+    {
+        try
+        {
+            return Directory
+                .EnumerateFileSystemEntries(destinationPath)
+                .Select(Path.GetFileName)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Select(name => name!)
+                .ToArray();
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            throw new FileCommandException(
+                FileCommandError.MoveFailed,
+                "이동할 위치의 이름 충돌을 확인할 수 없습니다.",
+                exception);
+        }
+    }
+
+    private static bool DestinationContainsName(string destinationPath, string name) =>
+        EnumerateDestinationNames(destinationPath)
+            .Contains(name, StringComparer.OrdinalIgnoreCase);
 
     public static string CreateInvalidNameMessage(FileNameError? error) => error switch
     {

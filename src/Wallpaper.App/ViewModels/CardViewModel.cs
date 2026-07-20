@@ -9,6 +9,8 @@ public sealed class CardViewModel(
 {
     private bool _showInsertBefore;
     private bool _showInsertAfter;
+    private bool _isFileDropTargetValid;
+    private bool _isFileDropTargetInvalid;
 
     public string Id { get; } = id;
 
@@ -32,6 +34,18 @@ public sealed class CardViewModel(
         private set => SetProperty(ref _showInsertAfter, value);
     }
 
+    public bool IsFileDropTargetValid
+    {
+        get => _isFileDropTargetValid;
+        private set => SetProperty(ref _isFileDropTargetValid, value);
+    }
+
+    public bool IsFileDropTargetInvalid
+    {
+        get => _isFileDropTargetInvalid;
+        private set => SetProperty(ref _isFileDropTargetInvalid, value);
+    }
+
     public void SetReorderTarget(bool insertAfter)
     {
         ShowInsertBefore = !insertAfter;
@@ -42,5 +56,17 @@ public sealed class CardViewModel(
     {
         ShowInsertBefore = false;
         ShowInsertAfter = false;
+    }
+
+    public void SetFileDropTarget(bool isValid)
+    {
+        IsFileDropTargetValid = isValid;
+        IsFileDropTargetInvalid = !isValid;
+    }
+
+    public void ClearFileDropTarget()
+    {
+        IsFileDropTargetValid = false;
+        IsFileDropTargetInvalid = false;
     }
 }

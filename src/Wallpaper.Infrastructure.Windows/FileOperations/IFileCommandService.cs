@@ -15,5 +15,17 @@ public interface IFileCommandService
         string newName,
         CancellationToken cancellationToken = default);
 
+    Task<FileMovePreparation> PrepareMoveAsync(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string desiredName,
+        CancellationToken cancellationToken = default);
+
+    Task<FileCommandTarget> MoveAsync(
+        FileCommandTarget source,
+        FileMoveDestination destination,
+        string destinationName,
+        CancellationToken cancellationToken = default);
+
     Task RecycleAsync(FileCommandTarget target, CancellationToken cancellationToken = default);
 }
