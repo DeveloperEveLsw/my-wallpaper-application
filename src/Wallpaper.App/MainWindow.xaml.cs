@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -231,13 +232,28 @@ public partial class MainWindow : Window
 
     private void FileTile_OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
     {
-        if (FileDragPreview.Visibility == Visibility.Visible)
+        if (FileDragPreview.Visibility == Visibility.Visible &&
+            TryGetFileDragPosition(out var position))
         {
-            UpdateFileDragPreview(Mouse.GetPosition(CompositionRoot));
+            UpdateFileDragPreview(position);
         }
 
         e.UseDefaultCursors = true;
         e.Handled = true;
+    }
+
+    private bool TryGetFileDragPosition(out Point position)
+    {
+        position = default;
+        if (GetCursorPos(out var cursorPosition) == 0)
+        {
+            return false;
+        }
+
+        position = CompositionRoot.PointFromScreen(new Point(
+            cursorPosition.X,
+            cursorPosition.Y));
+        return true;
     }
 
     private void FileTile_OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
@@ -480,4 +496,17 @@ public partial class MainWindow : Window
     }
 
     private sealed record FileDragPayload(FileCommandTarget Source);
+
+#pragma warning disable SYSLIB1054
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern int GetCursorPos(out NativePoint point);
+#pragma warning restore SYSLIB1054
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+
+        public int Y;
+    }
 }
