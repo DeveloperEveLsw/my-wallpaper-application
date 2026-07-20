@@ -9,7 +9,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 
 ## 현재 상태
 
-- M4 내부 파일 drag & drop 구현 완료, Windows 사용자 검수 준비
+- M5 Windows Shell 메뉴와 hit-test 입력 소유권 구현·Standalone 검수 완료
 - WPF 애플리케이션이 제품 본체
 - Wallpaper Engine과 Lively는 선택 가능한 실행 호스트
 - Wallpaper Engine은 로컬 Application Wallpaper로 사용하며 공개 Workshop 배포는 범위 밖
@@ -22,7 +22,8 @@ WPF 기반 데스크톱 애플리케이션이다.
 - Glass 확인 모달과 `IFileOperation`을 이용한 Windows 휴지통 이동 구현
 - `…` ↔ 폴더와 폴더 ↔ 폴더 파일 이동, drag preview와 유효·무효 대상 표시 구현
 - 덮어쓰기 없는 충돌 이름 제안·편집 모달과 이동 뒤 전체 재스캔 복구 구현
-- `Windows 추가 옵션 표시`·바탕화면 Shell 메뉴·Wallpaper Engine 호스팅은 후속 단계
+- 파일·폴더 `Windows 추가 옵션 표시`와 실제 바탕화면 Shell 메뉴 구현
+- Wallpaper Engine 호스팅과 호스트 상태의 우클릭 중복·포커스·HWND 검증은 M6 범위
 
 ## 기준 문서
 
@@ -30,7 +31,9 @@ WPF 기반 데스크톱 애플리케이션이다.
 - [기술 아키텍처](docs/architecture.md)
 - [미결정 사항](docs/open-questions.md)
 - [WPF 네이티브 런타임 결정](docs/decisions/0001-wpf-native-runtime.md)
+- [네이티브 Shell 메뉴 HWND 결정](docs/decisions/0007-native-shell-menu-hosting.md)
 - [MVP 개발 계획](docs/mvp-development-plan.md)
+- [M5 검수 기록](docs/m5-validation.md)
 
 ## 요구 환경
 
@@ -79,13 +82,22 @@ $fixture = ./scripts/new-m4-fixture.ps1
 
 세부 항목은 [M4 검수 체크리스트](docs/m4-validation.md)를 따른다.
 
+M5 Windows Shell 메뉴와 입력 경계는 전용 fixture에서 검수한다.
+
+```powershell
+$fixture = ./scripts/new-m5-fixture.ps1
+./scripts/run-standalone.ps1 -RootPath $fixture.RootPath -Configuration Release
+```
+
+세부 결과와 항목은 [M5 검수 기록](docs/m5-validation.md)을 따른다.
+
 첫 실행에서는 설정 패널이 자동으로 열린다. `new-mvp-fixture.ps1`이 출력한 경로를
 `폴더 선택`에서 지정한다. 루트 설정 후에는 화면 우측 상단의 보이지 않는 영역을 1초간
 hover하면 설정 패널을 다시 열 수 있다.
 
-현재 vertical slice는 파일·폴더 열기, 탐색기 위치 열기, 이름 변경, 휴지통 이동과
-카드 사이 내부 파일 drag & drop을 제공한다. 네이티브 Windows 추가 옵션과 바탕화면
-메뉴는 M5에서 추가한다. 모든 변경 뒤에는 실제 파일 시스템을 전체 재스캔한다.
+현재 vertical slice는 파일·폴더 열기, 탐색기 위치 열기, 이름 변경, 휴지통 이동,
+카드 사이 내부 파일 drag & drop, 네이티브 Windows 추가 옵션과 실제 바탕화면 메뉴를
+제공한다. 모든 변경과 네이티브 메뉴 종료 뒤에는 실제 파일 시스템을 전체 재스캔한다.
 
 ## 개발·검증 흐름
 

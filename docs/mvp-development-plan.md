@@ -1,7 +1,7 @@
 # MVP 개발 계획
 
 - 상태: 구현 진행 중
-- 현재 단계: M4 구현 완료, Windows 사용자 검수 준비
+- 현재 단계: M5 완료, M6 Wallpaper Engine 로컬 호스트 준비
 
 ## M0 — 기준선
 
@@ -65,10 +65,16 @@
 - `Windows 추가 옵션 표시`
 - 빈 배경의 실제 Windows Desktop 컨텍스트 메뉴
 - Dock·모달·배경 hit-test 경계
-- Wallpaper Engine 적용 상태의 우클릭 중복·포커스 검증
+
+통과 상태: 완료. 파일·폴더의 실제 Shell 메뉴와 명령 호출, 실제 Desktop 배경 메뉴,
+owner-drawn 메뉴 메시지 전달, 명시적 hit-test 경계와 메뉴 종료 뒤 재스캔을 구현했다.
+Windows 11 Standalone에서 메뉴 내용·명령 실행·취소·포커스와 입력 소유권을 검증했다.
+
+검증 기록: [M5 검증 기록](m5-validation.md)
 
 ## M6 — Wallpaper Engine 로컬 호스트
 
+- 첫 통합 게이트: 우클릭 중복·포커스 복귀·parent HWND 배치 검증
 - 로컬 Application Wallpaper package
 - WPF HWND 탐지·배치·종료
 - pause/resume, reload와 Explorer 재시작 복구

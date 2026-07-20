@@ -2,10 +2,12 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Wallpaper.App.ViewModels;
 using Wallpaper.Core.FileOperations;
+using Wallpaper.Infrastructure.Windows.Shell;
 
 namespace Wallpaper.App;
 
@@ -16,15 +18,18 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _clockTimer;
     private readonly DispatcherTimer _settingsHoverTimer;
+    private readonly IShellContextMenuService _shellContextMenuService;
     private Point _dockDragStart;
     private string? _dockDragCardId;
     private Point _fileDragStart;
     private FileCommandTarget? _fileDragSource;
+    private bool _isNativeContextMenuOpen;
 
-    public MainWindow(MainViewModel viewModel)
+    public MainWindow(MainViewModel viewModel, IShellContextMenuService shellContextMenuService)
     {
         InitializeComponent();
         ViewModel = viewModel;
+        _shellContextMenuService = shellContextMenuService;
         DataContext = viewModel;
 
         _clockTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -87,6 +92,19 @@ public partial class MainWindow : Window
     {
         ViewModel.CloseTransientUi();
         e.Handled = true;
+    }
+
+    private async void BackgroundSurface_OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        await ShowDesktopContextMenuAsync();
+    }
+
+    private async void SettingsHotspot_OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _settingsHoverTimer.Stop();
+        e.Handled = true;
+        await ShowDesktopContextMenuAsync();
     }
 
     private void Window_OnKeyDown(object sender, KeyEventArgs e)
@@ -264,6 +282,22 @@ public partial class MainWindow : Window
             ViewModel.OpenFileContextMenu(file, position.X, position.Y);
             e.Handled = true;
         }
+    }
+
+    private async void WindowsOptions_OnClick(object sender, RoutedEventArgs e)
+    {
+        var target = ViewModel.PrepareItemShellContextMenu();
+        if (target is null)
+        {
+            return;
+        }
+
+        await ShowShellContextMenuAsync((ownerWindow, screenX, screenY) =>
+            _shellContextMenuService.ShowItemContextMenu(
+                target,
+                ownerWindow,
+                screenX,
+                screenY));
     }
 
     private void RenameTextBox_OnLoaded(object sender, RoutedEventArgs e)
@@ -445,7 +479,7 @@ public partial class MainWindow : Window
     private Point GetItemContextMenuPosition(MouseEventArgs e)
     {
         const double menuWidth = 260;
-        const double menuHeight = 285;
+        const double menuHeight = 340;
         const double margin = 12;
 
         var position = e.GetPosition(CompositionRoot);
@@ -454,6 +488,61 @@ public partial class MainWindow : Window
         return new Point(
             Math.Clamp(position.X, margin, maxLeft),
             Math.Clamp(position.Y, margin, maxTop));
+    }
+
+    private Task ShowDesktopContextMenuAsync()
+    {
+        if (!ViewModel.PrepareDesktopShellContextMenu())
+        {
+            return Task.CompletedTask;
+        }
+
+        return ShowShellContextMenuAsync((ownerWindow, screenX, screenY) =>
+            _shellContextMenuService.ShowDesktopContextMenu(
+                ownerWindow,
+                screenX,
+                screenY));
+    }
+
+    private async Task ShowShellContextMenuAsync(Action<nint, int, int> showMenu)
+    {
+        if (_isNativeContextMenuOpen)
+        {
+            return;
+        }
+
+        _isNativeContextMenuOpen = true;
+        string? errorMessage = null;
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (GetCursorPos(out var cursorPosition) == 0)
+            {
+                return;
+            }
+
+            var ownerWindow = new WindowInteropHelper(this).Handle;
+            showMenu(ownerWindow, cursorPosition.X, cursorPosition.Y);
+        }
+        catch (FileCommandException exception)
+        {
+            errorMessage = exception.Message;
+        }
+        catch (ShellContextMenuException exception)
+        {
+            errorMessage = exception.Message;
+        }
+        finally
+        {
+            try
+            {
+                await ViewModel.RecoverAfterShellContextMenuAsync(errorMessage);
+            }
+            finally
+            {
+                _isNativeContextMenuOpen = false;
+            }
+        }
     }
 
     private void ShowFileDragPreview(string fileName, Point position)

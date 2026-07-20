@@ -136,15 +136,17 @@ Wallpaper Engine은 공개 Workshop 배포가 아니라 개인 로컬 실행만 
 Windows 전용 서비스로 구현한다. 영구 삭제로 폴백하지 않는다.
 
 `Windows 추가 옵션 표시`는 검증된 항목의 Shell object에서 `IContextMenu`를 얻어
-네이티브 메뉴를 구성하고 명령을 호출하는 별도 STA 경계에서 처리한다. 외부 shell
-extension은 앱 내부 명령과 다른 신뢰 경계이므로 실패·지연을 격리하고, 메뉴 종료 후
-항상 관련 디렉터리를 다시 스캔한다.
+네이티브 메뉴를 구성하고 명령을 호출하는 Windows infrastructure 경계에서 처리한다.
+실제 WPF HWND와 같은 UI STA를 owner로 사용하고 메뉴가 열린 동안에만 owner-drawn 메뉴
+메시지를 `IContextMenu2/3`로 전달한다. 외부 shell extension은 앱 내부 명령과 다른 신뢰
+경계이므로 실패를 사용자 오류로 변환하고, 메뉴 종료 후 항상 관련 디렉터리를 다시
+스캔한다. 세부 owner 결정은 [ADR 0007](decisions/0007-native-shell-menu-hosting.md)을 따른다.
 
 순수 월페이퍼 배경 우클릭은 Desktop `IShellFolder`의 view object에서 배경
-`IContextMenu`를 요청해 Windows Explorer의 실제 바탕화면 메뉴를 표시하는 방식을 우선
-검증한다. Windows 10/11에서 디스플레이 설정과 개인 설정을 포함한 원본 메뉴가 나오는지,
-Wallpaper Engine이 호스트인 상태에서 중복 메뉴가 발생하지 않는지를 초기 native input
-spike에서 확인한다. 합성 메뉴로 대체하지 않는다.
+`IContextMenu`를 요청해 Windows Explorer의 실제 바탕화면 메뉴를 표시한다. Standalone에서
+디스플레이 설정과 개인 설정을 포함한 원본 메뉴가 나오는지 확인하고, Wallpaper Engine이
+호스트인 상태의 중복 메뉴·포커스·parent HWND는 M6 첫 통합 게이트에서 검증한다. 합성
+메뉴로 대체하지 않는다.
 
 WPF hit testing은 파일·폴더 항목, Dock·모달 패널과 순수 월페이퍼 배경을 명시적으로
 구분한다. 항목 우클릭은 앱이 소유하고, 순수 배경 우클릭만 Windows Desktop 메뉴 경계로

@@ -104,7 +104,8 @@
 
         <!-- Background input surface. UI elements above it own their own hit test regions. -->
         <Border Background="Transparent"
-                MouseLeftButtonDown="BackgroundSurface_OnMouseLeftButtonDown" />
+                MouseLeftButtonDown="BackgroundSurface_OnMouseLeftButtonDown"
+                MouseRightButtonDown="BackgroundSurface_OnMouseRightButtonDown" />
 
         <!-- Desktop UI Layer. -->
         <Grid>
@@ -528,7 +529,7 @@
             </Border>
         </Grid>
 
-        <!-- Transient Layer: item commands and M4 file move UI. -->
+        <!-- Transient Layer: item commands, native Shell entry point, and file move UI. -->
         <Canvas Panel.ZIndex="4"
                 Visibility="{Binding IsItemContextMenuOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="260"
@@ -583,6 +584,13 @@
                             Background="#33D95E68"
                             Command="{Binding BeginRecycleCommand}"
                             Content="휴지통으로 이동"
+                            Style="{StaticResource GlassButtonStyle}" />
+                    <Border Height="1" Margin="6,8" Background="#38FFFFFF" />
+                    <Button Margin="0,2"
+                            AutomationProperties.AutomationId="ItemWindowsOptionsMenu"
+                            HorizontalContentAlignment="Left"
+                            Click="WindowsOptions_OnClick"
+                            Content="Windows 추가 옵션 표시"
                             Style="{StaticResource GlassButtonStyle}" />
                 </StackPanel>
             </Border>
@@ -913,6 +921,7 @@
                 VerticalAlignment="Top"
                 Background="#01000000"
                 MouseEnter="SettingsHotspot_OnMouseEnter"
-                MouseLeave="SettingsHotspot_OnMouseLeave" />
+                MouseLeave="SettingsHotspot_OnMouseLeave"
+                MouseRightButtonDown="SettingsHotspot_OnMouseRightButtonDown" />
     </Grid>
 </Window>

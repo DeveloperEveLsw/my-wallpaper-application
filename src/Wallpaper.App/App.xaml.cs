@@ -4,6 +4,7 @@ using Wallpaper.App.ViewModels;
 using Wallpaper.Core.Scanning;
 using Wallpaper.Infrastructure.Windows.FileOperations;
 using Wallpaper.Infrastructure.Windows.Settings;
+using Wallpaper.Infrastructure.Windows.Shell;
 using Wallpaper.Infrastructure.Windows.Visuals;
 using Wallpaper.Infrastructure.Windows.Watching;
 using Wallpaper.Rendering.Abstractions;
@@ -29,7 +30,7 @@ public partial class App : Application
             new DebouncedFileSystemWatcher(),
             new WindowsFileVisualService(),
             new WindowsFileCommandService());
-        var window = new MainWindow(viewModel);
+        var window = new MainWindow(viewModel, new WindowsShellContextMenuService());
         MainWindow = window;
         window.Show();
         await viewModel.InitializeAsync();

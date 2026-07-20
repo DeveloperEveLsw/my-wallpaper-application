@@ -389,7 +389,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _notificationIsError, value);
     }
 
-    public string HostStatus => "Standalone · M4 internal file drag & drop";
+    public string HostStatus => "Standalone · M5 Windows Shell and input";
 
     public async Task InitializeAsync()
     {
@@ -617,6 +617,45 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             card,
             left,
             top);
+    }
+
+    public FileCommandTarget? PrepareItemShellContextMenu()
+    {
+        if (IsBusy || _contextTarget is null)
+        {
+            return null;
+        }
+
+        var target = _contextTarget;
+        CloseItemContextMenu();
+        return target;
+    }
+
+    public bool PrepareDesktopShellContextMenu()
+    {
+        if (IsBusy || IsMoveDialogOpen || IsRenameDialogOpen || IsRecycleDialogOpen)
+        {
+            return false;
+        }
+
+        CloseItemContextMenu();
+        CloseNotification();
+        CloseModal();
+        CloseSettings();
+        return true;
+    }
+
+    public async Task RecoverAfterShellContextMenuAsync(string? errorMessage = null)
+    {
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            ShowNotification(errorMessage, isError: true);
+        }
+
+        if (HasRoot)
+        {
+            await RescanAsync();
+        }
     }
 
     public void CloseTransientUi()
