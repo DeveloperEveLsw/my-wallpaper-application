@@ -26,9 +26,10 @@ MVP 메뉴는 다음 순서를 사용한다.
 5. Windows 추가 옵션 표시
 
 휴지통 이동은 `IFileOperation`의 recycle 동작을 사용하고 영구 삭제로 폴백하지 않는다.
-`Windows 추가 옵션 표시`는 실제 Shell object의 `IContextMenu`를 이용해 Windows
-네이티브 메뉴를 연다. 네이티브 메뉴와 외부 shell extension 실행 후에는 실제 파일
-시스템을 다시 스캔한다.
+`Windows 추가 옵션 표시`는 실제 Shell object의 `IContextMenu`에서 명령을 얻어 Windows
+11 Fluent 메뉴로 연다. `더 많은 옵션 표시`에서는 클래식 Shell 메뉴도 제공한다. 최초
+우클릭 화면 좌표를 보존하며, Shell 명령과 외부 extension 실행 후에는 실제 파일 시스템을
+다시 스캔한다.
 
 휴지통 이동 전에는 Glass 확인 모달을 표시한다. 폴더는 현재 화면에 표시되지 않는 하위
 내용도 함께 이동한다는 사실을 경고한다.
@@ -37,8 +38,8 @@ MVP 메뉴는 다음 순서를 사용한다.
 
 순수 월페이퍼 배경을 우클릭하면 Windows Explorer의 실제 바탕화면 배경 메뉴를 연다.
 파일·폴더 항목은 Glass 메뉴를 열고 Dock·모달의 빈 패널은 Windows 메뉴로 전달하지
-않는다. Desktop Shell folder의 배경 `IContextMenu`를 우선 사용하며 Windows 10/11과
-호환되는 Shell 경계를 유지한다. M5 Standalone에서 실제 메뉴 내용과 입력 소유권을
+않는다. Desktop Shell folder의 배경 `IContextMenu`를 사용해 실제 명령을 열거하며
+Windows 10/11과 호환되는 Shell 경계를 유지한다. M5 Standalone에서 실제 메뉴 내용과 입력 소유권을
 검증하고, Wallpaper Engine의 중복 우클릭·포커스 복귀·부모 HWND 배치는 M6 첫 통합
 게이트에서 검증한다.
 

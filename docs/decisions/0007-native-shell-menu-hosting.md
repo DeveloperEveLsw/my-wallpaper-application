@@ -5,6 +5,10 @@
 
 ## 결정
 
+이 결정의 HWND·STA·클래식 메뉴 호환성 부분은 유지한다. 기본 표시 표면은
+[ADR 0008](0008-modern-shell-command-surface.md)에 따라 Windows 11 Fluent 메뉴로
+보완되었고, 아래 `TrackPopupMenuEx` 경로는 `더 많은 옵션 표시` 폴백에 사용한다.
+
 네이티브 파일·폴더 및 Desktop 배경 메뉴는 WPF 주 UI STA에서 실제 `MainWindow` HWND를
 owner로 사용해 표시한다. COM·PIDL·메뉴 interop은 `Wallpaper.Infrastructure.Windows`의
 전용 서비스에 격리한다.
@@ -14,8 +18,8 @@ owner로 사용해 표시한다. COM·PIDL·메뉴 interop은 `Wallpaper.Infrast
 `IContextMenu2` 또는 `IContextMenu3`로 전달한다. 메뉴 종료 시 hook, `HMENU`, PIDL과 COM
 포인터를 `finally`에서 해제한다.
 
-WPF의 mouse-up 메시지가 새 네이티브 메뉴를 즉시 닫지 않도록 입력 이벤트가 반환된 뒤
-Dispatcher idle에서 `TrackPopupMenuEx`를 호출한다. 네이티브 메뉴는 동작 중 WPF 입력을
+WPF의 mouse-up 메시지가 새 메뉴를 즉시 닫지 않도록 입력 이벤트가 반환된 뒤 Dispatcher
+idle에서 메뉴를 연다. 클래식 폴백은 `TrackPopupMenuEx`를 호출하고 동작 중 WPF 입력을
 modal하게 소유하며 종료 뒤 실제 파일 시스템을 다시 스캔한다.
 
 ## 이유

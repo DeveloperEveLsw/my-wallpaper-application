@@ -66,9 +66,10 @@
 - 빈 배경의 실제 Windows Desktop 컨텍스트 메뉴
 - Dock·모달·배경 hit-test 경계
 
-통과 상태: 완료. 파일·폴더의 실제 Shell 메뉴와 명령 호출, 실제 Desktop 배경 메뉴,
-owner-drawn 메뉴 메시지 전달, 명시적 hit-test 경계와 메뉴 종료 뒤 재스캔을 구현했다.
-Windows 11 Standalone에서 메뉴 내용·명령 실행·취소·포커스와 입력 소유권을 검증했다.
+통과 상태: 완료. 파일·폴더와 Desktop의 실제 Shell 명령을 Windows 11 Fluent 메뉴로
+표시하고, `더 많은 옵션 표시`의 owner-drawn 클래식 호환 메뉴, 최초 우클릭 좌표 보존,
+명시적 hit-test 경계와 메뉴 종료 뒤 재스캔을 구현했다. Windows 11 Standalone에서 메뉴
+내용·명령 실행·취소·포커스와 입력 소유권을 검증했다.
 
 검증 기록: [M5 검증 기록](m5-validation.md)
 

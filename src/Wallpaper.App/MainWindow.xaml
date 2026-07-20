@@ -213,7 +213,9 @@
                                                         Padding="8"
                                                         CornerRadius="16"
                                                         Cursor="Hand"
+                                                        Focusable="True"
                                                         GiveFeedback="FileTile_OnGiveFeedback"
+                                                        KeyDown="FileTile_OnKeyDown"
                                                         MouseLeftButtonDown="FileTile_OnMouseLeftButtonDown"
                                                         MouseRightButtonDown="FileTile_OnMouseRightButtonDown"
                                                         PreviewMouseMove="FileTile_OnPreviewMouseMove"
@@ -332,6 +334,7 @@
                                                 DragLeave="DockCard_OnDragLeave"
                                                 DragOver="DockCard_OnDragOver"
                                                 Drop="DockCard_OnDrop"
+                                                PreviewKeyDown="DockCard_OnPreviewKeyDown"
                                                 PreviewMouseLeftButtonDown="DockCard_OnPreviewMouseLeftButtonDown"
                                                 PreviewMouseMove="DockCard_OnPreviewMouseMove"
                                                 PreviewMouseRightButtonDown="DockCard_OnPreviewMouseRightButtonDown"
@@ -529,7 +532,7 @@
             </Border>
         </Grid>
 
-        <!-- Transient Layer: item commands, native Shell entry point, and file move UI. -->
+        <!-- Transient Layer: item commands, modern Shell entry point, and file move UI. -->
         <Canvas Panel.ZIndex="4"
                 Visibility="{Binding IsItemContextMenuOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="260"

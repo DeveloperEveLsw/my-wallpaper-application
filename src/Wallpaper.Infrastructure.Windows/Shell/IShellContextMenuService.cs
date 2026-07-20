@@ -6,14 +6,9 @@ namespace Wallpaper.Infrastructure.Windows.Shell;
 [SupportedOSPlatform("windows")]
 public interface IShellContextMenuService
 {
-    void ShowItemContextMenu(
+    IShellContextMenuSession CreateItemContextMenu(
         FileCommandTarget target,
-        nint ownerWindow,
-        int screenX,
-        int screenY);
+        nint ownerWindow);
 
-    void ShowDesktopContextMenu(
-        nint ownerWindow,
-        int screenX,
-        int screenY);
+    IShellContextMenuSession CreateDesktopContextMenu(nint ownerWindow);
 }

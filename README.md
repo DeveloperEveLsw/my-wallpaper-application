@@ -22,7 +22,8 @@ WPF 기반 데스크톱 애플리케이션이다.
 - Glass 확인 모달과 `IFileOperation`을 이용한 Windows 휴지통 이동 구현
 - `…` ↔ 폴더와 폴더 ↔ 폴더 파일 이동, drag preview와 유효·무효 대상 표시 구현
 - 덮어쓰기 없는 충돌 이름 제안·편집 모달과 이동 뒤 전체 재스캔 복구 구현
-- 파일·폴더 `Windows 추가 옵션 표시`와 실제 바탕화면 Shell 메뉴 구현
+- 실제 Shell 명령 기반 Windows 11 Fluent 추가 옵션과 바탕화면 메뉴 구현
+- 추가 옵션은 최초 우클릭 위치에 표시하고 `더 많은 옵션 표시`로 클래식 메뉴도 제공
 - Wallpaper Engine 호스팅과 호스트 상태의 우클릭 중복·포커스·HWND 검증은 M6 범위
 
 ## 기준 문서
@@ -32,6 +33,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 - [미결정 사항](docs/open-questions.md)
 - [WPF 네이티브 런타임 결정](docs/decisions/0001-wpf-native-runtime.md)
 - [네이티브 Shell 메뉴 HWND 결정](docs/decisions/0007-native-shell-menu-hosting.md)
+- [Windows 11 현대식 Shell 명령 표면 결정](docs/decisions/0008-modern-shell-command-surface.md)
 - [MVP 개발 계획](docs/mvp-development-plan.md)
 - [M5 검수 기록](docs/m5-validation.md)
 
@@ -96,8 +98,9 @@ $fixture = ./scripts/new-m5-fixture.ps1
 hover하면 설정 패널을 다시 열 수 있다.
 
 현재 vertical slice는 파일·폴더 열기, 탐색기 위치 열기, 이름 변경, 휴지통 이동,
-카드 사이 내부 파일 drag & drop, 네이티브 Windows 추가 옵션과 실제 바탕화면 메뉴를
-제공한다. 모든 변경과 네이티브 메뉴 종료 뒤에는 실제 파일 시스템을 전체 재스캔한다.
+카드 사이 내부 파일 drag & drop, Windows 11 Fluent 추가 옵션과 실제 Shell 명령 기반
+바탕화면 메뉴를 제공한다. 모든 변경과 Shell 메뉴 종료 뒤에는 실제 파일 시스템을 전체
+재스캔한다.
 
 ## 개발·검증 흐름
 

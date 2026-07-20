@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Wallpaper.Core.FileOperations;
 using Wallpaper.Infrastructure.Windows.Shell;
@@ -14,7 +16,7 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
     public WindowsShellContextMenuServiceTests() => Directory.CreateDirectory(_rootPath);
 
     [Fact]
-    public void ShowItemContextMenu_RejectsStaleTargetBeforeUsingOwnerWindow()
+    public void CreateItemContextMenu_RejectsStaleTargetBeforeUsingOwnerWindow()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -22,17 +24,15 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
         }
 
         var service = new WindowsShellContextMenuService();
-        var exception = Assert.Throws<FileCommandException>(() => service.ShowItemContextMenu(
+        var exception = Assert.Throws<FileCommandException>(() => service.CreateItemContextMenu(
             new FileCommandTarget(_rootPath, "missing.txt", FileCommandItemKind.File),
-            ownerWindow: 0,
-            screenX: 0,
-            screenY: 0));
+            ownerWindow: 0));
 
         Assert.Equal(FileCommandError.TargetMissing, exception.Error);
     }
 
     [Fact]
-    public void ShowItemContextMenu_RejectsMissingOwnerWithoutChangingValidTarget()
+    public void CreateItemContextMenu_RejectsMissingOwnerWithoutChangingValidTarget()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -43,18 +43,16 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
         File.WriteAllText(filePath, "keep");
         var service = new WindowsShellContextMenuService();
 
-        var exception = Assert.Throws<ShellContextMenuException>(() => service.ShowItemContextMenu(
+        var exception = Assert.Throws<ShellContextMenuException>(() => service.CreateItemContextMenu(
             new FileCommandTarget(_rootPath, "keep.txt", FileCommandItemKind.File),
-            ownerWindow: 0,
-            screenX: 0,
-            screenY: 0));
+            ownerWindow: 0));
 
         Assert.Equal("Windows Shell 메뉴의 소유 창을 찾을 수 없습니다.", exception.Message);
         Assert.Equal("keep", File.ReadAllText(filePath));
     }
 
     [Fact]
-    public void ShowDesktopContextMenu_RejectsMissingOwnerWindow()
+    public void CreateDesktopContextMenu_RejectsMissingOwnerWindow()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -64,9 +62,58 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
         var service = new WindowsShellContextMenuService();
 
         var exception = Assert.Throws<ShellContextMenuException>(() =>
-            service.ShowDesktopContextMenu(ownerWindow: 0, screenX: 0, screenY: 0));
+            service.CreateDesktopContextMenu(ownerWindow: 0));
 
         Assert.Equal("Windows Shell 메뉴의 소유 창을 찾을 수 없습니다.", exception.Message);
+    }
+
+    [Fact]
+    public void CreateItemContextMenu_EnumeratesRealShellCommandsInStaSession()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var filePath = Path.Combine(_rootPath, "commands.txt");
+        File.WriteAllText(filePath, "commands");
+
+        RunOnStaThread(ownerWindow =>
+        {
+            var service = new WindowsShellContextMenuService();
+            using var session = service.CreateItemContextMenu(
+                new FileCommandTarget(_rootPath, "commands.txt", FileCommandItemKind.File),
+                ownerWindow);
+
+            Assert.NotEmpty(session.Entries);
+            Assert.Contains(
+                Flatten(session.Entries),
+                entry => entry.Kind == ShellContextMenuEntryKind.Command &&
+                    entry.CommandId > 0 &&
+                    !string.IsNullOrWhiteSpace(entry.Text));
+        });
+    }
+
+    [Fact]
+    public void CreateDesktopContextMenu_EnumeratesRealShellCommandsInStaSession()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        RunOnStaThread(ownerWindow =>
+        {
+            var service = new WindowsShellContextMenuService();
+            using var session = service.CreateDesktopContextMenu(ownerWindow);
+
+            Assert.NotEmpty(session.Entries);
+            Assert.Contains(
+                Flatten(session.Entries),
+                entry => entry.Kind == ShellContextMenuEntryKind.Command &&
+                    entry.CommandId > 0 &&
+                    !string.IsNullOrWhiteSpace(entry.Text));
+        });
     }
 
     public void Dispose()
@@ -76,4 +123,82 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
             Directory.Delete(_rootPath, recursive: true);
         }
     }
+
+    private static IEnumerable<ShellContextMenuEntry> Flatten(
+        IEnumerable<ShellContextMenuEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            yield return entry;
+            foreach (var child in Flatten(entry.Children))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private static void RunOnStaThread(Action<nint> action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            nint ownerWindow = 0;
+            try
+            {
+                ownerWindow = CreateWindowEx(
+                    0,
+                    "STATIC",
+                    "Wallpaper Shell Menu Test Owner",
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0);
+                Assert.NotEqual(0, ownerWindow);
+                action(ownerWindow);
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+            finally
+            {
+                if (ownerWindow != 0)
+                {
+                    _ = DestroyWindow(ownerWindow);
+                }
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        if (failure is not null)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    [DllImport("user32.dll", EntryPoint = "CreateWindowExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern nint CreateWindowEx(
+        uint extendedStyle,
+        string className,
+        string windowName,
+        uint style,
+        int x,
+        int y,
+        int width,
+        int height,
+        nint parentWindow,
+        nint menu,
+        nint instance,
+        nint parameter);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyWindow(nint window);
 }

@@ -14,6 +14,16 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
     private const uint CmicMaskPtInvoke = 0x20000000;
     private const uint TpmRightButton = 0x0002;
     private const uint TpmReturnCommand = 0x0100;
+    private const uint GcsVerbW = 0x00000004;
+    private const uint MiimState = 0x00000001;
+    private const uint MiimId = 0x00000002;
+    private const uint MiimSubmenu = 0x00000004;
+    private const uint MiimFType = 0x00000100;
+    private const uint MiimString = 0x00000040;
+    private const uint MiimBitmap = 0x00000080;
+    private const uint MftSeparator = 0x00000800;
+    private const uint MfsDisabled = 0x00000003;
+    private const uint MfsChecked = 0x00000008;
     private const int SwShowNormal = 1;
     private const uint FirstCommandId = 1;
     private const uint LastCommandId = 0x7fff;
@@ -29,16 +39,14 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
     private static readonly Guid ContextMenu2InterfaceId = new("000214F4-0000-0000-C000-000000000046");
     private static readonly Guid ContextMenu3InterfaceId = new("BCFCE0A0-EC17-11D0-8D10-00A0C90F2719");
 
-    public void ShowItemContextMenu(
+    public IShellContextMenuSession CreateItemContextMenu(
         FileCommandTarget target,
-        nint ownerWindow,
-        int screenX,
-        int screenY)
+        nint ownerWindow)
     {
         ArgumentNullException.ThrowIfNull(target);
         var validated = FileCommandTargetValidator.ValidateExisting(target);
         EnsureWindowsAndOwner(ownerWindow);
-        RunWithComInitialized(() =>
+        return CreateWithComInitialized(() =>
         {
             nint absolutePidl = 0;
             nint parentFolder = 0;
@@ -75,7 +83,9 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                     0,
                     out contextMenu));
 
-                ShowContextMenu(contextMenu, ownerWindow, screenX, screenY);
+                var session = new ShellContextMenuSession(contextMenu, ownerWindow);
+                contextMenu = 0;
+                return session;
             }
             finally
             {
@@ -94,14 +104,11 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         });
     }
 
-    public void ShowDesktopContextMenu(
-        nint ownerWindow,
-        int screenX,
-        int screenY)
+    public IShellContextMenuSession CreateDesktopContextMenu(nint ownerWindow)
     {
         EnsureWindowsAndOwner(ownerWindow);
 
-        RunWithComInitialized(() =>
+        return CreateWithComInitialized(() =>
         {
             nint desktopFolder = 0;
             nint contextMenu = 0;
@@ -117,7 +124,9 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                     ref contextMenuId,
                     out contextMenu));
 
-                ShowContextMenu(contextMenu, ownerWindow, screenX, screenY);
+                var session = new ShellContextMenuSession(contextMenu, ownerWindow);
+                contextMenu = 0;
+                return session;
             }
             finally
             {
@@ -127,42 +136,20 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         });
     }
 
-    [SupportedOSPlatform("windows")]
-    private static void ShowContextMenu(
+    private static void ShowClassicContextMenu(
         nint contextMenu,
+        nint popupMenu,
+        nint contextMenu2,
+        nint contextMenu3,
         nint ownerWindow,
         int screenX,
         int screenY)
     {
-        nint popupMenu = 0;
-        nint contextMenu2 = 0;
-        nint contextMenu3 = 0;
         SubclassProc? subclassProc = null;
         var subclassInstalled = false;
 
         try
         {
-            popupMenu = CreatePopupMenu();
-            if (popupMenu == 0)
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            var queryContextMenu = GetVtableDelegate<QueryContextMenuDelegate>(contextMenu, 3);
-            ThrowForHResult(queryContextMenu(
-                contextMenu,
-                popupMenu,
-                0,
-                FirstCommandId,
-                LastCommandId,
-                CmfNormal));
-
-            TryQueryInterface(contextMenu, ContextMenu3InterfaceId, out contextMenu3);
-            if (contextMenu3 == 0)
-            {
-                TryQueryInterface(contextMenu, ContextMenu2InterfaceId, out contextMenu2);
-            }
-
             subclassProc = CreateSubclassProc(contextMenu2, contextMenu3);
             if (!SetWindowSubclass(ownerWindow, subclassProc, SubclassId, 0))
             {
@@ -191,20 +178,7 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                 return;
             }
 
-            var commandOffset = selectedCommand - FirstCommandId;
-            var invoke = new CommandInvokeInfo
-            {
-                Size = (uint)Marshal.SizeOf<CommandInvokeInfo>(),
-                Mask = CmicMaskUnicode | CmicMaskPtInvoke,
-                OwnerWindow = ownerWindow,
-                Verb = (nint)commandOffset,
-                Show = SwShowNormal,
-                VerbUnicode = (nint)commandOffset,
-                InvokePoint = new NativePoint(screenX, screenY),
-            };
-
-            var invokeCommand = GetVtableDelegate<InvokeCommandDelegate>(contextMenu, 4);
-            ThrowForHResult(invokeCommand(contextMenu, ref invoke));
+            InvokeContextCommand(contextMenu, ownerWindow, selectedCommand, screenX, screenY);
         }
         finally
         {
@@ -214,13 +188,35 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
             }
 
             _ = PostMessage(ownerWindow, WmNull, 0, 0);
-            ReleaseIfNotZero(contextMenu3);
-            ReleaseIfNotZero(contextMenu2);
-            if (popupMenu != 0)
-            {
-                _ = DestroyMenu(popupMenu);
-            }
         }
+    }
+
+    private static void InvokeContextCommand(
+        nint contextMenu,
+        nint ownerWindow,
+        uint commandId,
+        int screenX,
+        int screenY)
+    {
+        if (commandId < FirstCommandId || commandId > LastCommandId)
+        {
+            throw new ShellContextMenuException("선택한 Windows Shell 명령을 찾을 수 없습니다.");
+        }
+
+        var commandOffset = commandId - FirstCommandId;
+        var invoke = new CommandInvokeInfo
+        {
+            Size = (uint)Marshal.SizeOf<CommandInvokeInfo>(),
+            Mask = CmicMaskUnicode | CmicMaskPtInvoke,
+            OwnerWindow = ownerWindow,
+            Verb = (nint)commandOffset,
+            Show = SwShowNormal,
+            VerbUnicode = (nint)commandOffset,
+            InvokePoint = new NativePoint(screenX, screenY),
+        };
+
+        var invokeCommand = GetVtableDelegate<InvokeCommandDelegate>(contextMenu, 4);
+        ThrowForHResult(invokeCommand(contextMenu, ref invoke));
     }
 
     private static SubclassProc CreateSubclassProc(nint contextMenu2, nint contextMenu3)
@@ -261,7 +257,8 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
     private static bool IsShellMenuMessage(uint message) => message is
         WmInitMenuPopup or WmDrawItem or WmMeasureItem or WmMenuChar;
 
-    private static void RunWithComInitialized(Action action)
+    private static IShellContextMenuSession CreateWithComInitialized(
+        Func<ShellContextMenuSession> createSession)
     {
         try
         {
@@ -269,11 +266,12 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
             ThrowForHResult(initializeResult);
             try
             {
-                action();
+                return createSession();
             }
-            finally
+            catch
             {
                 CoUninitialize();
+                throw;
             }
         }
         catch (FileCommandException)
@@ -291,6 +289,356 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                 "Windows Shell 메뉴를 표시하거나 명령을 실행하지 못했습니다.",
                 exception);
         }
+    }
+
+    private sealed class ShellContextMenuSession : IShellContextMenuSession
+    {
+        private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+        private nint _contextMenu;
+        private nint _contextMenu2;
+        private nint _contextMenu3;
+        private nint _popupMenu;
+        private nint _ownerWindow;
+        private bool _disposed;
+
+        public ShellContextMenuSession(nint contextMenu, nint ownerWindow)
+        {
+            _contextMenu = contextMenu;
+            _ownerWindow = ownerWindow;
+
+            try
+            {
+                _popupMenu = CreatePopupMenu();
+                if (_popupMenu == 0)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                var queryContextMenu = GetVtableDelegate<QueryContextMenuDelegate>(_contextMenu, 3);
+                ThrowForHResult(queryContextMenu(
+                    _contextMenu,
+                    _popupMenu,
+                    0,
+                    FirstCommandId,
+                    LastCommandId,
+                    CmfNormal));
+
+                TryQueryInterface(_contextMenu, ContextMenu3InterfaceId, out _contextMenu3);
+                if (_contextMenu3 == 0)
+                {
+                    TryQueryInterface(_contextMenu, ContextMenu2InterfaceId, out _contextMenu2);
+                }
+
+                Entries = ReadMenuEntries(_popupMenu);
+            }
+            catch
+            {
+                if (_popupMenu != 0)
+                {
+                    _ = DestroyMenu(_popupMenu);
+                    _popupMenu = 0;
+                }
+
+                ReleaseIfNotZero(_contextMenu3);
+                _contextMenu3 = 0;
+                ReleaseIfNotZero(_contextMenu2);
+                _contextMenu2 = 0;
+                _contextMenu = 0;
+                _ownerWindow = 0;
+                throw;
+            }
+        }
+
+        public IReadOnlyList<ShellContextMenuEntry> Entries { get; } =
+            Array.Empty<ShellContextMenuEntry>();
+
+        public void Invoke(uint commandId, int screenX, int screenY)
+        {
+            EnsureUsable();
+            RunShellAction(() => InvokeContextCommand(
+                _contextMenu,
+                _ownerWindow,
+                commandId,
+                screenX,
+                screenY));
+        }
+
+        public void ShowClassic(int screenX, int screenY)
+        {
+            EnsureUsable();
+            RunShellAction(() => ShowClassicContextMenu(
+                _contextMenu,
+                _popupMenu,
+                _contextMenu2,
+                _contextMenu3,
+                _ownerWindow,
+                screenX,
+                screenY));
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            EnsureOwnerThread();
+            _disposed = true;
+            ReleaseNativeResources(uninitializeCom: true);
+        }
+
+        private IReadOnlyList<ShellContextMenuEntry> ReadMenuEntries(nint menu)
+        {
+            var count = GetMenuItemCount(menu);
+            if (count < 0)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            var entries = new List<ShellContextMenuEntry>(count);
+            for (uint position = 0; position < count; position++)
+            {
+                var info = GetMenuEntryInfo(menu, position);
+                if ((info.Type & MftSeparator) != 0)
+                {
+                    entries.Add(new ShellContextMenuEntry(
+                        ShellContextMenuEntryKind.Separator,
+                        0,
+                        string.Empty,
+                        null,
+                        false,
+                        false,
+                        0,
+                        Array.Empty<ShellContextMenuEntry>()));
+                    continue;
+                }
+
+                var text = RemoveAccessKeyMarkers(info.Text);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    continue;
+                }
+
+                IReadOnlyList<ShellContextMenuEntry> children = Array.Empty<ShellContextMenuEntry>();
+                var kind = ShellContextMenuEntryKind.Command;
+                if (info.Submenu != 0)
+                {
+                    InitializeSubmenu(info.Submenu, position);
+                    children = ReadMenuEntries(info.Submenu);
+                    kind = ShellContextMenuEntryKind.Submenu;
+                }
+
+                entries.Add(new ShellContextMenuEntry(
+                    kind,
+                    info.CommandId,
+                    text,
+                    kind == ShellContextMenuEntryKind.Command
+                        ? GetCanonicalVerb(info.CommandId)
+                        : null,
+                    (info.State & MfsDisabled) == 0,
+                    (info.State & MfsChecked) != 0,
+                    info.BitmapHandle,
+                    children));
+            }
+
+            return NormalizeSeparators(entries);
+        }
+
+        private MenuEntryInfo GetMenuEntryInfo(nint menu, uint position)
+        {
+            var nativeInfo = new MenuItemInfo
+            {
+                Size = (uint)Marshal.SizeOf<MenuItemInfo>(),
+                Mask = MiimFType | MiimState | MiimId | MiimSubmenu | MiimString | MiimBitmap,
+            };
+
+            if (!GetMenuItemInfo(menu, position, true, ref nativeInfo))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            var characterCount = checked((int)nativeInfo.CharacterCount + 1);
+            var textBuffer = Marshal.AllocHGlobal(characterCount * sizeof(char));
+            try
+            {
+                nativeInfo.Text = textBuffer;
+                nativeInfo.CharacterCount = (uint)characterCount;
+                if (!GetMenuItemInfo(menu, position, true, ref nativeInfo))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                return new MenuEntryInfo(
+                    nativeInfo.Type,
+                    nativeInfo.State,
+                    nativeInfo.CommandId,
+                    nativeInfo.Submenu,
+                    nativeInfo.BitmapItem,
+                    Marshal.PtrToStringUni(textBuffer) ?? string.Empty);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(textBuffer);
+            }
+        }
+
+        private string? GetCanonicalVerb(uint commandId)
+        {
+            if (commandId < FirstCommandId || commandId > LastCommandId)
+            {
+                return null;
+            }
+
+            const int maximumCharacters = 260;
+            var buffer = Marshal.AllocHGlobal(maximumCharacters * sizeof(char));
+            try
+            {
+                Marshal.WriteInt16(buffer, 0);
+                var getCommandString = GetVtableDelegate<GetCommandStringDelegate>(_contextMenu, 5);
+                var result = getCommandString(
+                    _contextMenu,
+                    commandId - FirstCommandId,
+                    GcsVerbW,
+                    0,
+                    buffer,
+                    maximumCharacters);
+                return result >= 0
+                    ? NullIfWhiteSpace(Marshal.PtrToStringUni(buffer))
+                    : null;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        private void InitializeSubmenu(nint submenu, uint position)
+        {
+            if (_contextMenu3 != 0)
+            {
+                var handler = GetVtableDelegate<HandleMenuMessage2Delegate>(_contextMenu3, 7);
+                _ = handler(_contextMenu3, WmInitMenuPopup, (nuint)submenu, (nint)position, out _);
+                return;
+            }
+
+            if (_contextMenu2 != 0)
+            {
+                var handler = GetVtableDelegate<HandleMenuMessageDelegate>(_contextMenu2, 6);
+                _ = handler(_contextMenu2, WmInitMenuPopup, (nuint)submenu, (nint)position);
+            }
+        }
+
+        private void EnsureUsable()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            EnsureOwnerThread();
+        }
+
+        private void EnsureOwnerThread()
+        {
+            if (Environment.CurrentManagedThreadId != _ownerThreadId)
+            {
+                throw new InvalidOperationException(
+                    "Windows Shell 메뉴 세션은 생성한 UI 스레드에서 사용해야 합니다.");
+            }
+        }
+
+        private void ReleaseNativeResources(bool uninitializeCom)
+        {
+            if (_popupMenu != 0)
+            {
+                _ = DestroyMenu(_popupMenu);
+                _popupMenu = 0;
+            }
+
+            ReleaseIfNotZero(_contextMenu3);
+            _contextMenu3 = 0;
+            ReleaseIfNotZero(_contextMenu2);
+            _contextMenu2 = 0;
+            ReleaseIfNotZero(_contextMenu);
+            _contextMenu = 0;
+            _ownerWindow = 0;
+
+            if (uninitializeCom)
+            {
+                CoUninitialize();
+            }
+        }
+
+        private static void RunShellAction(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (ShellContextMenuException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                exception is COMException or Win32Exception or InvalidOperationException)
+            {
+                throw new ShellContextMenuException(
+                    "Windows Shell 메뉴 명령을 실행하지 못했습니다.",
+                    exception);
+            }
+        }
+
+        private static IReadOnlyList<ShellContextMenuEntry> NormalizeSeparators(
+            IReadOnlyList<ShellContextMenuEntry> entries)
+        {
+            var normalized = new List<ShellContextMenuEntry>(entries.Count);
+            foreach (var entry in entries)
+            {
+                if (entry.Kind == ShellContextMenuEntryKind.Separator &&
+                    (normalized.Count == 0 || normalized[^1].Kind == ShellContextMenuEntryKind.Separator))
+                {
+                    continue;
+                }
+
+                normalized.Add(entry);
+            }
+
+            if (normalized.Count > 0 && normalized[^1].Kind == ShellContextMenuEntryKind.Separator)
+            {
+                normalized.RemoveAt(normalized.Count - 1);
+            }
+
+            return normalized;
+        }
+
+        private static string RemoveAccessKeyMarkers(string text)
+        {
+            var builder = new System.Text.StringBuilder(text.Length);
+            for (var index = 0; index < text.Length; index++)
+            {
+                if (text[index] != '&')
+                {
+                    builder.Append(text[index]);
+                    continue;
+                }
+
+                if (index + 1 < text.Length && text[index + 1] == '&')
+                {
+                    builder.Append('&');
+                    index++;
+                }
+            }
+
+            return builder.ToString().Replace("\t", "    ", StringComparison.Ordinal).Trim();
+        }
+
+        private static string? NullIfWhiteSpace(string? value) =>
+            string.IsNullOrWhiteSpace(value) ? null : value;
+
+        private readonly record struct MenuEntryInfo(
+            uint Type,
+            uint State,
+            uint CommandId,
+            nint Submenu,
+            nint BitmapHandle,
+            string Text);
     }
 
     private static void EnsureWindowsAndOwner(nint ownerWindow)
@@ -388,6 +736,19 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
 
     [DllImport("user32.dll", SetLastError = true)]
     [SupportedOSPlatform("windows")]
+    private static extern int GetMenuItemCount(nint menu);
+
+    [DllImport("user32.dll", EntryPoint = "GetMenuItemInfoW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    [SupportedOSPlatform("windows")]
+    private static extern bool GetMenuItemInfo(
+        nint menu,
+        uint item,
+        [MarshalAs(UnmanagedType.Bool)] bool byPosition,
+        ref MenuItemInfo menuItemInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [SupportedOSPlatform("windows")]
     private static extern uint TrackPopupMenuEx(
         nint menu,
         uint flags,
@@ -465,6 +826,15 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
     private delegate int InvokeCommandDelegate(nint instance, ref CommandInvokeInfo invokeInfo);
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate int GetCommandStringDelegate(
+        nint instance,
+        nuint commandOffset,
+        uint type,
+        nint reserved,
+        nint name,
+        int maximumCharacters);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate int HandleMenuMessageDelegate(
         nint instance,
         uint message,
@@ -506,6 +876,23 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         public nint DirectoryUnicode;
         public nint TitleUnicode;
         public NativePoint InvokePoint;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct MenuItemInfo
+    {
+        public uint Size;
+        public uint Mask;
+        public uint Type;
+        public uint State;
+        public uint CommandId;
+        public nint Submenu;
+        public nint BitmapChecked;
+        public nint BitmapUnchecked;
+        public nuint ItemData;
+        public nint Text;
+        public uint CharacterCount;
+        public nint BitmapItem;
     }
 
     [StructLayout(LayoutKind.Sequential)]

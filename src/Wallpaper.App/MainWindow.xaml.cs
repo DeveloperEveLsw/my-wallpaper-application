@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Wallpaper.App.Services;
 using Wallpaper.App.ViewModels;
 using Wallpaper.Core.FileOperations;
 using Wallpaper.Infrastructure.Windows.Shell;
@@ -23,7 +24,8 @@ public partial class MainWindow : Window
     private string? _dockDragCardId;
     private Point _fileDragStart;
     private FileCommandTarget? _fileDragSource;
-    private bool _isNativeContextMenuOpen;
+    private bool _isShellContextMenuOpen;
+    private NativePoint? _itemShellMenuScreenPosition;
 
     public MainWindow(MainViewModel viewModel, IShellContextMenuService shellContextMenuService)
     {
@@ -96,23 +98,32 @@ public partial class MainWindow : Window
 
     private async void BackgroundSurface_OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        var screenPosition = GetContextMenuScreenPosition(e);
         e.Handled = true;
-        await ShowDesktopContextMenuAsync();
+        await ShowDesktopContextMenuAsync(screenPosition);
     }
 
     private async void SettingsHotspot_OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         _settingsHoverTimer.Stop();
+        var screenPosition = GetContextMenuScreenPosition(e);
         e.Handled = true;
-        await ShowDesktopContextMenuAsync();
+        await ShowDesktopContextMenuAsync(screenPosition);
     }
 
-    private void Window_OnKeyDown(object sender, KeyEventArgs e)
+    private async void Window_OnKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
             ViewModel.CloseTransientUi();
             e.Handled = true;
+            return;
+        }
+
+        if (IsContextMenuKey(e))
+        {
+            e.Handled = true;
+            await ShowDesktopContextMenuAsync(GetElementCenterOnScreen(CompositionRoot));
         }
     }
 
@@ -279,9 +290,23 @@ public partial class MainWindow : Window
         if (sender is Border { DataContext: FileTileViewModel file })
         {
             var position = GetItemContextMenuPosition(e);
+            _itemShellMenuScreenPosition = GetContextMenuScreenPosition(e);
             ViewModel.OpenFileContextMenu(file, position.X, position.Y);
             e.Handled = true;
         }
+    }
+
+    private void FileTile_OnKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!IsContextMenuKey(e) || sender is not Border { DataContext: FileTileViewModel file } tile)
+        {
+            return;
+        }
+
+        var position = GetItemContextMenuPosition(GetElementCenter(tile));
+        _itemShellMenuScreenPosition = GetElementCenterOnScreen(tile);
+        ViewModel.OpenFileContextMenu(file, position.X, position.Y);
+        e.Handled = true;
     }
 
     private async void WindowsOptions_OnClick(object sender, RoutedEventArgs e)
@@ -292,12 +317,16 @@ public partial class MainWindow : Window
             return;
         }
 
-        await ShowShellContextMenuAsync((ownerWindow, screenX, screenY) =>
-            _shellContextMenuService.ShowItemContextMenu(
-                target,
-                ownerWindow,
-                screenX,
-                screenY));
+        var screenPosition = _itemShellMenuScreenPosition;
+        _itemShellMenuScreenPosition = null;
+        if (screenPosition is null)
+        {
+            return;
+        }
+
+        await ShowShellContextMenuAsync(
+            screenPosition.Value,
+            ownerWindow => _shellContextMenuService.CreateItemContextMenu(target, ownerWindow));
     }
 
     private void RenameTextBox_OnLoaded(object sender, RoutedEventArgs e)
@@ -332,9 +361,24 @@ public partial class MainWindow : Window
         if (sender is Button { DataContext: CardViewModel { IsVirtual: false } card })
         {
             var position = GetItemContextMenuPosition(e);
+            _itemShellMenuScreenPosition = GetContextMenuScreenPosition(e);
             ViewModel.OpenFolderContextMenu(card, position.X, position.Y);
             e.Handled = true;
         }
+    }
+
+    private void DockCard_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!IsContextMenuKey(e) ||
+            sender is not Button { DataContext: CardViewModel { IsVirtual: false } card } button)
+        {
+            return;
+        }
+
+        var position = GetItemContextMenuPosition(GetElementCenter(button));
+        _itemShellMenuScreenPosition = GetElementCenterOnScreen(button);
+        ViewModel.OpenFolderContextMenu(card, position.X, position.Y);
+        e.Handled = true;
     }
 
     private void DockCard_OnPreviewMouseMove(object sender, MouseEventArgs e)
@@ -477,12 +521,14 @@ public partial class MainWindow : Window
     }
 
     private Point GetItemContextMenuPosition(MouseEventArgs e)
+        => GetItemContextMenuPosition(e.GetPosition(CompositionRoot));
+
+    private Point GetItemContextMenuPosition(Point position)
     {
         const double menuWidth = 260;
         const double menuHeight = 340;
         const double margin = 12;
 
-        var position = e.GetPosition(CompositionRoot);
         var maxLeft = Math.Max(margin, CompositionRoot.ActualWidth - menuWidth - margin);
         var maxTop = Math.Max(margin, CompositionRoot.ActualHeight - menuHeight - margin);
         return new Point(
@@ -490,39 +536,76 @@ public partial class MainWindow : Window
             Math.Clamp(position.Y, margin, maxTop));
     }
 
-    private Task ShowDesktopContextMenuAsync()
+    private Point GetElementCenter(FrameworkElement element) => element.TranslatePoint(
+        new Point(element.ActualWidth / 2, element.ActualHeight / 2),
+        CompositionRoot);
+
+    private static NativePoint GetElementCenterOnScreen(FrameworkElement element)
+    {
+        var center = element.PointToScreen(new Point(
+            element.ActualWidth / 2,
+            element.ActualHeight / 2));
+        return new NativePoint(
+            (int)Math.Round(center.X, MidpointRounding.AwayFromZero),
+            (int)Math.Round(center.Y, MidpointRounding.AwayFromZero));
+    }
+
+    private static bool IsContextMenuKey(KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        return key == Key.Apps ||
+            (key == Key.F10 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+    }
+
+    private NativePoint GetContextMenuScreenPosition(MouseEventArgs e)
+    {
+        var originalClick = PointToScreen(e.GetPosition(this));
+        return new NativePoint(
+            (int)Math.Round(originalClick.X, MidpointRounding.AwayFromZero),
+            (int)Math.Round(originalClick.Y, MidpointRounding.AwayFromZero));
+    }
+
+    private Task ShowDesktopContextMenuAsync(NativePoint screenPosition)
     {
         if (!ViewModel.PrepareDesktopShellContextMenu())
         {
             return Task.CompletedTask;
         }
 
-        return ShowShellContextMenuAsync((ownerWindow, screenX, screenY) =>
-            _shellContextMenuService.ShowDesktopContextMenu(
-                ownerWindow,
-                screenX,
-                screenY));
+        return ShowShellContextMenuAsync(
+            screenPosition,
+            _shellContextMenuService.CreateDesktopContextMenu);
     }
 
-    private async Task ShowShellContextMenuAsync(Action<nint, int, int> showMenu)
+    private async Task ShowShellContextMenuAsync(
+        NativePoint screenPosition,
+        Func<nint, IShellContextMenuSession> createSession)
     {
-        if (_isNativeContextMenuOpen)
+        if (_isShellContextMenuOpen)
         {
             return;
         }
 
-        _isNativeContextMenuOpen = true;
+        _isShellContextMenuOpen = true;
         string? errorMessage = null;
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            if (GetCursorPos(out var cursorPosition) == 0)
-            {
-                return;
-            }
-
             var ownerWindow = new WindowInteropHelper(this).Handle;
-            showMenu(ownerWindow, cursorPosition.X, cursorPosition.Y);
+            using var session = createSession(ownerWindow);
+            var result = await ModernShellContextMenuPresenter.ShowAsync(
+                this,
+                session.Entries,
+                screenPosition.X,
+                screenPosition.Y);
+            if (result.Kind == ModernShellContextMenuResultKind.Command)
+            {
+                session.Invoke(result.CommandId, screenPosition.X, screenPosition.Y);
+            }
+            else if (result.Kind == ModernShellContextMenuResultKind.ShowClassic)
+            {
+                session.ShowClassic(screenPosition.X, screenPosition.Y);
+            }
         }
         catch (FileCommandException exception)
         {
@@ -540,7 +623,7 @@ public partial class MainWindow : Window
             }
             finally
             {
-                _isNativeContextMenuOpen = false;
+                _isShellContextMenuOpen = false;
             }
         }
     }
@@ -594,6 +677,12 @@ public partial class MainWindow : Window
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint
     {
+        public NativePoint(int x, int y)
+        {
+            X = x;
+            Y = y;
+        }
+
         public int X;
 
         public int Y;
