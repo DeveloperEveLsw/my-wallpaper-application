@@ -3,6 +3,7 @@ namespace Wallpaper.App.ViewModels;
 public sealed class CardViewModel(
     string id,
     string name,
+    string? relativePath,
     bool isVirtual,
     IReadOnlyList<FileTileViewModel> files) : ObservableObject
 {
@@ -12,6 +13,8 @@ public sealed class CardViewModel(
     public string Id { get; } = id;
 
     public string Name { get; } = name;
+
+    public string? RelativePath { get; } = relativePath;
 
     public bool IsVirtual { get; } = isVirtual;
 

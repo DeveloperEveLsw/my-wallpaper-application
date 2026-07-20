@@ -204,15 +204,35 @@
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Width="128"
+                                                <Border x:Name="FileTileChrome"
+                                                        AutomationProperties.AutomationId="{Binding File.Id}"
+                                                        Width="128"
                                                         Height="122"
                                                         Margin="4"
                                                         Padding="8"
-                                                        Background="#0AFFFFFF"
-                                                        BorderBrush="Transparent"
-                                                        BorderThickness="1"
                                                         CornerRadius="16"
+                                                        Cursor="Hand"
+                                                        MouseLeftButtonDown="FileTile_OnMouseLeftButtonDown"
+                                                        MouseRightButtonDown="FileTile_OnMouseRightButtonDown"
                                                         ToolTip="{Binding Name}">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#0AFFFFFF" />
+                                                            <Setter Property="BorderBrush" Value="Transparent" />
+                                                            <Setter Property="BorderThickness" Value="1" />
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="#20FFFFFF" />
+                                                                    <Setter Property="BorderBrush" Value="#42FFFFFF" />
+                                                                </Trigger>
+                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                    <Setter Property="Background" Value="#3D6FA8E8" />
+                                                                    <Setter Property="BorderBrush" Value="#B7B9DAFF" />
+                                                                    <Setter Property="BorderThickness" Value="2" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
                                                     <StackPanel VerticalAlignment="Center">
                                                         <Grid Width="58" Height="62" HorizontalAlignment="Center">
                                                             <Border Background="#22FFFFFF"
@@ -303,6 +323,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Button AllowDrop="True"
+                                                AutomationProperties.AutomationId="{Binding Id}"
                                                 Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"
                                                 DragLeave="DockCard_OnDragLeave"
@@ -310,6 +331,7 @@
                                                 Drop="DockCard_OnDrop"
                                                 PreviewMouseLeftButtonDown="DockCard_OnPreviewMouseLeftButtonDown"
                                                 PreviewMouseMove="DockCard_OnPreviewMouseMove"
+                                                PreviewMouseRightButtonDown="DockCard_OnPreviewMouseRightButtonDown"
                                                 Style="{StaticResource CardButtonStyle}">
                                             <Grid>
                                                 <StackPanel>
@@ -386,6 +408,7 @@
                             Background="#5AFFFFFF" />
 
                     <Button Grid.Column="2"
+                            AutomationProperties.AutomationId="virtual:root-files"
                             Command="{Binding OpenCardCommand}"
                             CommandParameter="{Binding RootFilesCard}"
                             Style="{StaticResource CardButtonStyle}">
@@ -413,6 +436,209 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- Transient Layer: M3 item commands. -->
+        <Canvas Panel.ZIndex="4"
+                Visibility="{Binding IsItemContextMenuOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Width="260"
+                    Canvas.Left="{Binding ItemContextMenuLeft}"
+                    Canvas.Top="{Binding ItemContextMenuTop}"
+                    Padding="12"
+                    Background="#F01A2131"
+                    BorderBrush="#70FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="18">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="30" Opacity="0.48" ShadowDepth="10" />
+                </Border.Effect>
+                <StackPanel>
+                    <Grid Margin="5,2,2,9">
+                        <TextBlock Margin="0,0,32,0"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="#C9D9E7F7"
+                                   Text="{Binding ItemContextTargetName}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <Button Width="26"
+                                Height="26"
+                                HorizontalAlignment="Right"
+                                Padding="0"
+                                Command="{Binding CloseContextMenuCommand}"
+                                Content="×"
+                                Style="{StaticResource GlassButtonStyle}" />
+                    </Grid>
+                    <Button Margin="0,2"
+                            AutomationProperties.AutomationId="ItemOpenMenu"
+                            HorizontalContentAlignment="Left"
+                            Command="{Binding OpenContextItemCommand}"
+                            Content="열기"
+                            Style="{StaticResource GlassButtonStyle}" />
+                    <Button Margin="0,2"
+                            AutomationProperties.AutomationId="ItemRevealMenu"
+                            HorizontalContentAlignment="Left"
+                            Command="{Binding ShowContextItemInExplorerCommand}"
+                            Content="탐색기에서 위치 열기"
+                            Style="{StaticResource GlassButtonStyle}" />
+                    <Border Height="1" Margin="6,8" Background="#38FFFFFF" />
+                    <Button Margin="0,2"
+                            AutomationProperties.AutomationId="ItemRenameMenu"
+                            HorizontalContentAlignment="Left"
+                            Command="{Binding BeginRenameCommand}"
+                            Content="이름 변경"
+                            Style="{StaticResource GlassButtonStyle}" />
+                    <Button Margin="0,2"
+                            AutomationProperties.AutomationId="ItemRecycleMenu"
+                            HorizontalContentAlignment="Left"
+                            Background="#33D95E68"
+                            Command="{Binding BeginRecycleCommand}"
+                            Content="휴지통으로 이동"
+                            Style="{StaticResource GlassButtonStyle}" />
+                </StackPanel>
+            </Border>
+        </Canvas>
+
+        <Grid Panel.ZIndex="5"
+              Background="#85070B13"
+              Visibility="{Binding IsRenameDialogOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Width="440"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="#F21A2131"
+                    BorderBrush="#70FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="24">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="38" Opacity="0.5" ShadowDepth="12" />
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitleStyle}" Text="이름 변경" />
+                    <TextBlock Margin="0,8,0,18"
+                               FontSize="12"
+                               Foreground="#AFC2D2E8"
+                               Text="확장자를 포함한 전체 이름을 입력하세요." />
+                    <TextBox x:Name="RenameTextBox"
+                             AutomationProperties.AutomationId="RenameInput"
+                             MinHeight="44"
+                             Padding="12,9"
+                             Loaded="RenameTextBox_OnLoaded"
+                             Background="#24FFFFFF"
+                             BorderBrush="#5AFFFFFF"
+                             BorderThickness="1"
+                             CaretBrush="#FFFFFF"
+                             FontSize="14"
+                             Foreground="#F7F9FF"
+                             MaxLength="255"
+                             Text="{Binding RenameText, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock MinHeight="20"
+                               Margin="2,8,2,0"
+                               FontSize="12"
+                               Foreground="#FFFFA0A8"
+                               Text="{Binding RenameValidationMessage}"
+                               TextWrapping="Wrap" />
+                    <StackPanel Margin="0,20,0,0"
+                                HorizontalAlignment="Right"
+                                Orientation="Horizontal">
+                        <Button IsCancel="True"
+                                AutomationProperties.AutomationId="RenameCancel"
+                                Command="{Binding CancelRenameCommand}"
+                                Content="취소"
+                                Style="{StaticResource GlassButtonStyle}" />
+                        <Button Margin="8,0,0,0"
+                                AutomationProperties.AutomationId="RenameConfirm"
+                                IsDefault="True"
+                                IsEnabled="{Binding CanConfirmRename}"
+                                Command="{Binding ConfirmRenameCommand}"
+                                Content="변경"
+                                Style="{StaticResource GlassButtonStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Grid Panel.ZIndex="5"
+              Background="#85070B13"
+              Visibility="{Binding IsRecycleDialogOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Width="470"
+                    Padding="24"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="#F21A2131"
+                    BorderBrush="#70FFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="24">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="38" Opacity="0.5" ShadowDepth="12" />
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource PanelTitleStyle}" Text="{Binding RecycleTitle}" />
+                    <TextBlock Margin="0,13,0,0"
+                               Foreground="#D7E2ECF7"
+                               Text="{Binding RecycleMessage}"
+                               TextWrapping="Wrap" />
+                    <TextBlock MinHeight="20"
+                               Margin="0,10,0,0"
+                               FontSize="12"
+                               Foreground="#FFFFA0A8"
+                               Text="{Binding RecycleErrorMessage}"
+                               TextWrapping="Wrap" />
+                    <StackPanel Margin="0,20,0,0"
+                                HorizontalAlignment="Right"
+                                Orientation="Horizontal">
+                        <Button IsCancel="True"
+                                AutomationProperties.AutomationId="RecycleCancel"
+                                Command="{Binding CancelRecycleCommand}"
+                                Content="취소"
+                                Style="{StaticResource GlassButtonStyle}" />
+                        <Button Margin="8,0,0,0"
+                                AutomationProperties.AutomationId="RecycleConfirm"
+                                Padding="16,8"
+                                IsDefault="True"
+                                Background="#9FD34F5C"
+                                Command="{Binding ConfirmRecycleCommand}"
+                                Content="휴지통으로 이동"
+                                Style="{StaticResource GlassButtonStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Panel.ZIndex="6"
+                MinWidth="320"
+                MaxWidth="620"
+                Margin="24,28,24,0"
+                Padding="14,10"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                BorderThickness="1"
+                CornerRadius="16"
+                Visibility="{Binding IsNotificationOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="#E629563F" />
+                    <Setter Property="BorderBrush" Value="#7899E1B5" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding NotificationIsError}" Value="True">
+                            <Setter Property="Background" Value="#E65C2930" />
+                            <Setter Property="BorderBrush" Value="#8BFF9CA5" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid>
+                <TextBlock Margin="0,0,34,0"
+                           VerticalAlignment="Center"
+                           Text="{Binding NotificationText}"
+                           TextWrapping="Wrap" />
+                <Button Width="28"
+                        Height="28"
+                        HorizontalAlignment="Right"
+                        Padding="0"
+                        Command="{Binding CloseNotificationCommand}"
+                        Content="×"
+                        Style="{StaticResource GlassButtonStyle}" />
+            </Grid>
+        </Border>
 
         <!-- Transient Layer: hidden settings panel. -->
         <Border Width="390"

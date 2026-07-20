@@ -2,6 +2,7 @@ using System.Windows;
 using Wallpaper.App.Services;
 using Wallpaper.App.ViewModels;
 using Wallpaper.Core.Scanning;
+using Wallpaper.Infrastructure.Windows.FileOperations;
 using Wallpaper.Infrastructure.Windows.Settings;
 using Wallpaper.Infrastructure.Windows.Visuals;
 using Wallpaper.Infrastructure.Windows.Watching;
@@ -26,7 +27,8 @@ public partial class App : Application
             new JsonAppSettingsStore(settingsDirectory),
             new WindowsFolderPicker(),
             new DebouncedFileSystemWatcher(),
-            new WindowsFileVisualService());
+            new WindowsFileVisualService(),
+            new WindowsFileCommandService());
         var window = new MainWindow(viewModel);
         MainWindow = window;
         window.Show();

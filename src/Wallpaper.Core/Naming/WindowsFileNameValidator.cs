@@ -6,9 +6,11 @@ public static class WindowsFileNameValidator
 
     private static readonly HashSet<string> ReservedNames = new(
         [
-            "CON", "PRN", "AUX", "NUL",
+            "CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$",
             "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "COM¹", "COM²", "COM³",
             "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+            "LPT¹", "LPT²", "LPT³",
         ],
         StringComparer.OrdinalIgnoreCase);
 
@@ -34,7 +36,13 @@ public static class WindowsFileNameValidator
             return FileNameValidationResult.Invalid(FileNameError.InvalidCharacter);
         }
 
-        var deviceName = Path.GetFileNameWithoutExtension(name);
+        if (name.Length > 255)
+        {
+            return FileNameValidationResult.Invalid(FileNameError.TooLong);
+        }
+
+        var firstPeriod = name.IndexOf('.');
+        var deviceName = (firstPeriod < 0 ? name : name[..firstPeriod]).TrimEnd(' ', '.');
         if (ReservedNames.Contains(deviceName))
         {
             return FileNameValidationResult.Invalid(FileNameError.ReservedDeviceName);
@@ -58,4 +66,5 @@ public enum FileNameError
     TrailingSpaceOrPeriod,
     InvalidCharacter,
     ReservedDeviceName,
+    TooLong,
 }

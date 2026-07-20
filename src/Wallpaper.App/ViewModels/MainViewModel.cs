@@ -3,9 +3,12 @@ using System.IO;
 using System.Windows.Input;
 using Wallpaper.App.Commands;
 using Wallpaper.App.Services;
+using Wallpaper.Core.FileOperations;
 using Wallpaper.Core.Models;
+using Wallpaper.Core.Naming;
 using Wallpaper.Core.Scanning;
 using Wallpaper.Core.Sorting;
+using Wallpaper.Infrastructure.Windows.FileOperations;
 using Wallpaper.Infrastructure.Windows.Settings;
 using Wallpaper.Infrastructure.Windows.Visuals;
 using Wallpaper.Infrastructure.Windows.Watching;
@@ -21,8 +24,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IFolderPicker _folderPicker;
     private readonly IRootChangeWatcher _changeWatcher;
     private readonly IFileVisualService _fileVisualService;
+    private readonly IFileCommandService _fileCommandService;
     private readonly AsyncRelayCommand _chooseRootCommand;
     private readonly AsyncRelayCommand _rescanCommand;
+    private readonly AsyncRelayCommand _openContextItemCommand;
+    private readonly AsyncRelayCommand _showContextItemInExplorerCommand;
+    private readonly RelayCommand _beginRenameCommand;
+    private readonly AsyncRelayCommand _confirmRenameCommand;
+    private readonly RelayCommand _cancelRenameCommand;
+    private readonly RelayCommand _beginRecycleCommand;
+    private readonly AsyncRelayCommand _confirmRecycleCommand;
+    private readonly RelayCommand _cancelRecycleCommand;
+    private readonly RelayCommand _closeContextMenuCommand;
+    private readonly RelayCommand _closeNotificationCommand;
     private CardViewModel _rootFilesCard;
     private IReadOnlyList<string> _folderOrder = Array.Empty<string>();
     private SynchronizationContext? _uiContext;
@@ -38,7 +52,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _isRootAvailable;
     private bool _rescanInProgress;
     private bool _rescanRequested;
+    private Task? _rescanCompletion;
     private string? _openCardId;
+    private string? _selectedFileId;
+    private FileCommandTarget? _contextTarget;
+    private CardViewModel? _contextCard;
+    private FileCommandTarget? _dialogTarget;
+    private bool _isItemContextMenuOpen;
+    private double _itemContextMenuLeft;
+    private double _itemContextMenuTop;
+    private string _itemContextTargetName = string.Empty;
+    private bool _isRenameDialogOpen;
+    private string _renameText = string.Empty;
+    private string _renameValidationMessage = string.Empty;
+    private bool _isRecycleDialogOpen;
+    private string _recycleTitle = string.Empty;
+    private string _recycleMessage = string.Empty;
+    private string _recycleErrorMessage = string.Empty;
+    private bool _isNotificationOpen;
+    private string _notificationText = string.Empty;
+    private bool _notificationIsError;
     private bool _disposed;
 
     public MainViewModel(
@@ -46,13 +79,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         IAppSettingsStore settingsStore,
         IFolderPicker folderPicker,
         IRootChangeWatcher changeWatcher,
-        IFileVisualService fileVisualService)
+        IFileVisualService fileVisualService,
+        IFileCommandService fileCommandService)
     {
         _scanner = scanner;
         _settingsStore = settingsStore;
         _folderPicker = folderPicker;
         _changeWatcher = changeWatcher;
         _fileVisualService = fileVisualService;
+        _fileCommandService = fileCommandService;
         _rootFilesCard = CreateRootFilesCard(Array.Empty<DesktopFile>(), string.Empty);
 
         _chooseRootCommand = new AsyncRelayCommand(ChooseRootAsync, () => !IsBusy);
@@ -63,6 +98,34 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         CloseModalCommand = new RelayCommand(CloseModal);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
         CloseSettingsCommand = new RelayCommand(CloseSettings);
+        _openContextItemCommand = new AsyncRelayCommand(
+            OpenContextItemAsync,
+            () => _contextTarget is not null && !IsBusy);
+        _showContextItemInExplorerCommand = new AsyncRelayCommand(
+            ShowContextItemInExplorerAsync,
+            () => _contextTarget is not null && !IsBusy);
+        _beginRenameCommand = new RelayCommand(BeginRename, () => _contextTarget is not null && !IsBusy);
+        _confirmRenameCommand = new AsyncRelayCommand(
+            ConfirmRenameAsync,
+            () => CanConfirmRename && !IsBusy);
+        _cancelRenameCommand = new RelayCommand(CancelRename);
+        _beginRecycleCommand = new RelayCommand(BeginRecycle, () => _contextTarget is not null && !IsBusy);
+        _confirmRecycleCommand = new AsyncRelayCommand(
+            ConfirmRecycleAsync,
+            () => _dialogTarget is not null && !IsBusy);
+        _cancelRecycleCommand = new RelayCommand(CancelRecycle);
+        _closeContextMenuCommand = new RelayCommand(CloseItemContextMenu);
+        _closeNotificationCommand = new RelayCommand(CloseNotification);
+        OpenContextItemCommand = _openContextItemCommand;
+        ShowContextItemInExplorerCommand = _showContextItemInExplorerCommand;
+        BeginRenameCommand = _beginRenameCommand;
+        ConfirmRenameCommand = _confirmRenameCommand;
+        CancelRenameCommand = _cancelRenameCommand;
+        BeginRecycleCommand = _beginRecycleCommand;
+        ConfirmRecycleCommand = _confirmRecycleCommand;
+        CancelRecycleCommand = _cancelRecycleCommand;
+        CloseContextMenuCommand = _closeContextMenuCommand;
+        CloseNotificationCommand = _closeNotificationCommand;
         _changeWatcher.Changed += ChangeWatcher_OnChanged;
     }
 
@@ -81,6 +144,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand OpenSettingsCommand { get; }
 
     public ICommand CloseSettingsCommand { get; }
+
+    public ICommand OpenContextItemCommand { get; }
+
+    public ICommand ShowContextItemInExplorerCommand { get; }
+
+    public ICommand BeginRenameCommand { get; }
+
+    public ICommand ConfirmRenameCommand { get; }
+
+    public ICommand CancelRenameCommand { get; }
+
+    public ICommand BeginRecycleCommand { get; }
+
+    public ICommand ConfirmRecycleCommand { get; }
+
+    public ICommand CancelRecycleCommand { get; }
+
+    public ICommand CloseContextMenuCommand { get; }
+
+    public ICommand CloseNotificationCommand { get; }
 
     public CardViewModel RootFilesCard
     {
@@ -159,7 +242,102 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public string HostStatus => "Standalone · M2 read-only sync";
+    public bool IsItemContextMenuOpen
+    {
+        get => _isItemContextMenuOpen;
+        private set => SetProperty(ref _isItemContextMenuOpen, value);
+    }
+
+    public double ItemContextMenuLeft
+    {
+        get => _itemContextMenuLeft;
+        private set => SetProperty(ref _itemContextMenuLeft, value);
+    }
+
+    public double ItemContextMenuTop
+    {
+        get => _itemContextMenuTop;
+        private set => SetProperty(ref _itemContextMenuTop, value);
+    }
+
+    public string ItemContextTargetName
+    {
+        get => _itemContextTargetName;
+        private set => SetProperty(ref _itemContextTargetName, value);
+    }
+
+    public bool IsRenameDialogOpen
+    {
+        get => _isRenameDialogOpen;
+        private set => SetProperty(ref _isRenameDialogOpen, value);
+    }
+
+    public string RenameText
+    {
+        get => _renameText;
+        set
+        {
+            if (SetProperty(ref _renameText, value))
+            {
+                ValidateRenameText();
+            }
+        }
+    }
+
+    public string RenameValidationMessage
+    {
+        get => _renameValidationMessage;
+        private set => SetProperty(ref _renameValidationMessage, value);
+    }
+
+    public bool CanConfirmRename =>
+        _dialogTarget is not null &&
+        WindowsFileNameValidator.Validate(RenameText).IsValid &&
+        !string.Equals(_dialogTarget.Name, RenameText, StringComparison.Ordinal);
+
+    public bool IsRecycleDialogOpen
+    {
+        get => _isRecycleDialogOpen;
+        private set => SetProperty(ref _isRecycleDialogOpen, value);
+    }
+
+    public string RecycleTitle
+    {
+        get => _recycleTitle;
+        private set => SetProperty(ref _recycleTitle, value);
+    }
+
+    public string RecycleMessage
+    {
+        get => _recycleMessage;
+        private set => SetProperty(ref _recycleMessage, value);
+    }
+
+    public string RecycleErrorMessage
+    {
+        get => _recycleErrorMessage;
+        private set => SetProperty(ref _recycleErrorMessage, value);
+    }
+
+    public bool IsNotificationOpen
+    {
+        get => _isNotificationOpen;
+        private set => SetProperty(ref _isNotificationOpen, value);
+    }
+
+    public string NotificationText
+    {
+        get => _notificationText;
+        private set => SetProperty(ref _notificationText, value);
+    }
+
+    public bool NotificationIsError
+    {
+        get => _notificationIsError;
+        private set => SetProperty(ref _notificationIsError, value);
+    }
+
+    public string HostStatus => "Standalone · M3 basic file commands";
 
     public async Task InitializeAsync()
     {
@@ -225,8 +403,96 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void SelectFile(FileTileViewModel file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        CloseItemContextMenu();
+        foreach (var visibleFile in VisibleFileRows.SelectMany(row => row.Files))
+        {
+            visibleFile.IsSelected = ReferenceEquals(visibleFile, file);
+        }
+
+        _selectedFileId = file.File.Id;
+    }
+
+    public async Task OpenFileAsync(FileTileViewModel file)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        if (RootPath is null || IsBusy)
+        {
+            return;
+        }
+
+        SelectFile(file);
+        var target = new FileCommandTarget(RootPath, file.RelativePath, FileCommandItemKind.File);
+        try
+        {
+            await _fileCommandService.OpenAsync(target);
+        }
+        catch (FileCommandException exception)
+        {
+            ShowNotification(exception.Message, isError: true);
+            await RescanAsync();
+        }
+    }
+
+    public void OpenFileContextMenu(FileTileViewModel file, double left, double top)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        if (RootPath is null || IsBusy)
+        {
+            return;
+        }
+
+        SelectFile(file);
+        OpenItemContextMenu(
+            new FileCommandTarget(RootPath, file.RelativePath, FileCommandItemKind.File),
+            card: null,
+            left,
+            top);
+    }
+
+    public void OpenFolderContextMenu(CardViewModel card, double left, double top)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        if (RootPath is null || IsBusy || card.IsVirtual || string.IsNullOrWhiteSpace(card.RelativePath))
+        {
+            return;
+        }
+
+        OpenItemContextMenu(
+            new FileCommandTarget(RootPath, card.RelativePath, FileCommandItemKind.Folder),
+            card,
+            left,
+            top);
+    }
+
     public void CloseTransientUi()
     {
+        if (IsRenameDialogOpen)
+        {
+            CancelRename();
+            return;
+        }
+
+        if (IsRecycleDialogOpen)
+        {
+            CancelRecycle();
+            return;
+        }
+
+        if (IsItemContextMenuOpen)
+        {
+            CloseItemContextMenu();
+            return;
+        }
+
+        if (IsNotificationOpen)
+        {
+            CloseNotification();
+            return;
+        }
+
         CloseModal();
         CloseSettings();
     }
@@ -245,6 +511,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private async Task ChooseRootAsync()
     {
+        CloseItemTransientUi();
         var selectedPath = _folderPicker.PickFolder(RootPath);
         if (string.IsNullOrWhiteSpace(selectedPath))
         {
@@ -287,10 +554,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (_rescanInProgress)
         {
             _rescanRequested = true;
+            var currentCompletion = _rescanCompletion;
+            if (currentCompletion is not null)
+            {
+                await currentCompletion;
+            }
+
             return;
         }
 
         _rescanInProgress = true;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _rescanCompletion = completion.Task;
         IsBusy = true;
         try
         {
@@ -305,6 +580,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             IsBusy = false;
             _rescanInProgress = false;
+            completion.TrySetResult();
+            if (ReferenceEquals(_rescanCompletion, completion.Task))
+            {
+                _rescanCompletion = null;
+            }
         }
     }
 
@@ -356,6 +636,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             FolderCards.Add(new CardViewModel(
                 folder.Id,
                 folder.Name,
+                folder.RelativePath,
                 isVirtual: false,
                 CreateFileTiles(snapshot.RootPath, folder.Files)));
         }
@@ -390,6 +671,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void OpenCard(CardViewModel card)
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        CloseItemTransientUi();
         if (IsModalOpen && string.Equals(_openCardId, card.Id, StringComparison.OrdinalIgnoreCase))
         {
             CloseModal();
@@ -397,6 +684,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         IsSettingsOpen = false;
+        _selectedFileId = null;
         ShowCard(card);
     }
 
@@ -408,8 +696,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         for (var offset = 0; offset < card.Files.Count; offset += FileTilesPerRow)
         {
-            VisibleFileRows.Add(new FileTileRowViewModel(
-                card.Files.Skip(offset).Take(FileTilesPerRow).ToArray()));
+            var rowFiles = card.Files.Skip(offset).Take(FileTilesPerRow).ToArray();
+            foreach (var file in rowFiles)
+            {
+                file.IsSelected = string.Equals(
+                    file.File.Id,
+                    _selectedFileId,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+
+            VisibleFileRows.Add(new FileTileRowViewModel(rowFiles));
         }
 
         HasVisibleFiles = card.Files.Count > 0;
@@ -421,6 +717,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         IsModalOpen = false;
         _openCardId = null;
+        _selectedFileId = null;
         VisibleFileRows.Clear();
         HasVisibleFiles = false;
         VisibleFileCountText = string.Empty;
@@ -428,6 +725,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void OpenSettings()
     {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        CloseItemTransientUi();
         CloseModal();
         IsSettingsOpen = true;
     }
@@ -438,6 +741,374 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             IsSettingsOpen = false;
         }
+    }
+
+    private void OpenItemContextMenu(
+        FileCommandTarget target,
+        CardViewModel? card,
+        double left,
+        double top)
+    {
+        CancelRenameCore();
+        CancelRecycleCore();
+        IsSettingsOpen = false;
+        _contextTarget = target;
+        _contextCard = card;
+        ItemContextTargetName = target.Name;
+        ItemContextMenuLeft = left;
+        ItemContextMenuTop = top;
+        IsItemContextMenuOpen = true;
+        NotifyCommandStates();
+    }
+
+    private void CloseItemContextMenu()
+    {
+        IsItemContextMenuOpen = false;
+        _contextTarget = null;
+        _contextCard = null;
+        ItemContextTargetName = string.Empty;
+        NotifyCommandStates();
+    }
+
+    private async Task OpenContextItemAsync()
+    {
+        var target = _contextTarget;
+        var contextCard = _contextCard;
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (target.Kind == FileCommandItemKind.File)
+            {
+                await _fileCommandService.OpenAsync(target);
+            }
+            else
+            {
+                await _fileCommandService.EnsureValidAsync(target);
+                var cardId = DesktopItemId.ForFolder(target.RelativePath);
+                var currentCard = FolderCards.FirstOrDefault(card =>
+                    string.Equals(card.Id, cardId, StringComparison.OrdinalIgnoreCase)) ?? contextCard;
+                if (currentCard is null || !FolderCards.Contains(currentCard))
+                {
+                    throw new FileCommandException(
+                        FileCommandError.TargetMissing,
+                        "선택한 폴더가 더 이상 Dock에 없습니다.");
+                }
+
+                _selectedFileId = null;
+                ShowCard(currentCard);
+            }
+
+            CloseItemContextMenu();
+        }
+        catch (FileCommandException exception)
+        {
+            CloseItemContextMenu();
+            ShowNotification(exception.Message, isError: true);
+            await RescanAsync();
+        }
+    }
+
+    private async Task ShowContextItemInExplorerAsync()
+    {
+        var target = _contextTarget;
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _fileCommandService.ShowInExplorerAsync(target);
+            CloseItemContextMenu();
+        }
+        catch (FileCommandException exception)
+        {
+            CloseItemContextMenu();
+            ShowNotification(exception.Message, isError: true);
+            await RescanAsync();
+        }
+    }
+
+    private void BeginRename()
+    {
+        var target = _contextTarget;
+        if (target is null || IsBusy)
+        {
+            return;
+        }
+
+        _dialogTarget = target;
+        CloseItemContextMenu();
+        RenameText = target.Name;
+        RenameValidationMessage = string.Empty;
+        IsRenameDialogOpen = true;
+        ValidateRenameText();
+    }
+
+    private void CancelRename()
+    {
+        if (!IsBusy)
+        {
+            CancelRenameCore();
+        }
+    }
+
+    private void CancelRenameCore()
+    {
+        IsRenameDialogOpen = false;
+        if (!IsRecycleDialogOpen)
+        {
+            _dialogTarget = null;
+        }
+
+        RenameText = string.Empty;
+        RenameValidationMessage = string.Empty;
+        NotifyCommandStates();
+    }
+
+    private void ValidateRenameText()
+    {
+        var validation = WindowsFileNameValidator.Validate(RenameText);
+        if (!validation.IsValid)
+        {
+            RenameValidationMessage = WindowsFileCommandService.CreateInvalidNameMessage(validation.Error);
+        }
+        else if (_dialogTarget is not null &&
+                 string.Equals(_dialogTarget.Name, RenameText, StringComparison.Ordinal))
+        {
+            RenameValidationMessage = "현재 이름과 동일합니다.";
+        }
+        else
+        {
+            RenameValidationMessage = string.Empty;
+        }
+
+        OnPropertyChanged(nameof(CanConfirmRename));
+        _confirmRenameCommand.NotifyCanExecuteChanged();
+    }
+
+    private async Task ConfirmRenameAsync()
+    {
+        var target = _dialogTarget;
+        var newName = RenameText;
+        if (target is null || !CanConfirmRename)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            var renamedTarget = await _fileCommandService.RenameAsync(target, newName);
+            var settingsSaved = await ApplyRenamedIdentityAsync(target, renamedTarget);
+            CancelRenameCore();
+            await RescanAsync();
+
+            var message = settingsSaved
+                ? $"'{target.Name}'의 이름을 '{renamedTarget.Name}'(으)로 변경했습니다."
+                : $"이름은 변경했지만 Dock 순서 설정을 저장하지 못했습니다.";
+            StatusText = message;
+            ShowNotification(message, isError: !settingsSaved);
+        }
+        catch (FileCommandException exception)
+        {
+            RenameValidationMessage = exception.Message;
+            var targetIsStale = exception.Error is
+                FileCommandError.InvalidTarget or
+                FileCommandError.TargetMissing or
+                FileCommandError.UnsupportedTarget;
+            if (targetIsStale)
+            {
+                CancelRenameCore();
+                ShowNotification(exception.Message, isError: true);
+            }
+
+            await RescanAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task<bool> ApplyRenamedIdentityAsync(
+        FileCommandTarget previousTarget,
+        FileCommandTarget renamedTarget)
+    {
+        if (previousTarget.Kind == FileCommandItemKind.File)
+        {
+            var previousId = DesktopItemId.ForFile(previousTarget.RelativePath);
+            if (string.Equals(_selectedFileId, previousId, StringComparison.OrdinalIgnoreCase))
+            {
+                _selectedFileId = DesktopItemId.ForFile(renamedTarget.RelativePath);
+            }
+
+            return true;
+        }
+
+        var oldId = DesktopItemId.ForFolder(previousTarget.RelativePath);
+        var newId = DesktopItemId.ForFolder(renamedTarget.RelativePath);
+        _folderOrder = _folderOrder
+            .Select(id => string.Equals(id, oldId, StringComparison.OrdinalIgnoreCase) ? newId : id)
+            .ToArray();
+        if (string.Equals(_openCardId, oldId, StringComparison.OrdinalIgnoreCase))
+        {
+            _openCardId = newId;
+        }
+
+        try
+        {
+            await SaveCurrentSettingsAsync();
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
+    private void BeginRecycle()
+    {
+        var target = _contextTarget;
+        if (target is null || IsBusy)
+        {
+            return;
+        }
+
+        _dialogTarget = target;
+        CloseItemContextMenu();
+        RecycleTitle = "휴지통으로 이동할까요?";
+        RecycleMessage = target.Kind == FileCommandItemKind.Folder
+            ? $"'{target.Name}' 폴더와 화면에 표시되지 않는 모든 하위 폴더·파일을 함께 휴지통으로 이동합니다."
+            : $"'{target.Name}' 파일을 Windows 휴지통으로 이동합니다.";
+        RecycleErrorMessage = string.Empty;
+        IsRecycleDialogOpen = true;
+        NotifyCommandStates();
+    }
+
+    private void CancelRecycle()
+    {
+        if (!IsBusy)
+        {
+            CancelRecycleCore();
+        }
+    }
+
+    private void CancelRecycleCore()
+    {
+        IsRecycleDialogOpen = false;
+        if (!IsRenameDialogOpen)
+        {
+            _dialogTarget = null;
+        }
+
+        RecycleTitle = string.Empty;
+        RecycleMessage = string.Empty;
+        RecycleErrorMessage = string.Empty;
+        NotifyCommandStates();
+    }
+
+    private async Task ConfirmRecycleAsync()
+    {
+        var target = _dialogTarget;
+        if (target is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await _fileCommandService.RecycleAsync(target);
+            var settingsSaved = await RemoveRecycledIdentityAsync(target);
+            CancelRecycleCore();
+            await RescanAsync();
+
+            var message = settingsSaved
+                ? $"'{target.Name}'을(를) 휴지통으로 이동했습니다."
+                : "항목은 휴지통으로 이동했지만 Dock 순서 설정을 저장하지 못했습니다.";
+            StatusText = message;
+            ShowNotification(message, isError: !settingsSaved);
+        }
+        catch (FileCommandException exception)
+        {
+            RecycleErrorMessage = exception.Message;
+            var targetIsStale = exception.Error is
+                FileCommandError.InvalidTarget or
+                FileCommandError.TargetMissing or
+                FileCommandError.UnsupportedTarget;
+            if (targetIsStale)
+            {
+                CancelRecycleCore();
+                ShowNotification(exception.Message, isError: true);
+            }
+
+            await RescanAsync();
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task<bool> RemoveRecycledIdentityAsync(FileCommandTarget target)
+    {
+        if (target.Kind == FileCommandItemKind.File)
+        {
+            var fileId = DesktopItemId.ForFile(target.RelativePath);
+            if (string.Equals(_selectedFileId, fileId, StringComparison.OrdinalIgnoreCase))
+            {
+                _selectedFileId = null;
+            }
+
+            return true;
+        }
+
+        var folderId = DesktopItemId.ForFolder(target.RelativePath);
+        _folderOrder = _folderOrder
+            .Where(id => !string.Equals(id, folderId, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (string.Equals(_openCardId, folderId, StringComparison.OrdinalIgnoreCase))
+        {
+            _openCardId = null;
+        }
+
+        try
+        {
+            await SaveCurrentSettingsAsync();
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
+    private void ShowNotification(string message, bool isError)
+    {
+        NotificationText = message;
+        NotificationIsError = isError;
+        IsNotificationOpen = true;
+    }
+
+    private void CloseNotification()
+    {
+        IsNotificationOpen = false;
+        NotificationText = string.Empty;
+        NotificationIsError = false;
+    }
+
+    private void CloseItemTransientUi()
+    {
+        CloseItemContextMenu();
+        CancelRenameCore();
+        CancelRecycleCore();
     }
 
     private void ChangeWatcher_OnChanged(object? sender, RootChangedEventArgs args)
@@ -521,6 +1192,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private CardViewModel CreateRootFilesCard(IEnumerable<DesktopFile> files, string rootPath) => new(
         "virtual:root-files",
         "…",
+        relativePath: null,
         isVirtual: true,
         CreateFileTiles(rootPath, files));
 
@@ -556,5 +1228,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         _chooseRootCommand.NotifyCanExecuteChanged();
         _rescanCommand.NotifyCanExecuteChanged();
+        _openContextItemCommand.NotifyCanExecuteChanged();
+        _showContextItemInExplorerCommand.NotifyCanExecuteChanged();
+        _beginRenameCommand.NotifyCanExecuteChanged();
+        _confirmRenameCommand.NotifyCanExecuteChanged();
+        _beginRecycleCommand.NotifyCanExecuteChanged();
+        _confirmRecycleCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanConfirmRename));
     }
 }

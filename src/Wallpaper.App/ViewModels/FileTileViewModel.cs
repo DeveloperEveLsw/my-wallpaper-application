@@ -16,10 +16,19 @@ public sealed class FileTileViewModel(
     private ImageSource? _visual;
     private int _loadedPixelWidth;
     private bool _visualIsThumbnail;
+    private bool _isSelected;
 
     public DesktopFile File { get; } = file;
 
     public string Name => File.Name;
+
+    public string RelativePath => File.RelativePath;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set => SetProperty(ref _isSelected, value);
+    }
 
     public ImageSource? Visual
     {

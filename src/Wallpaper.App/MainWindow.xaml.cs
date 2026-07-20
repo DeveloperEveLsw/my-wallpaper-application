@@ -156,12 +156,57 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void FileTile_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border { DataContext: FileTileViewModel file })
+        {
+            return;
+        }
+
+        ViewModel.SelectFile(file);
+        if (e.ClickCount >= 2)
+        {
+            await ViewModel.OpenFileAsync(file);
+        }
+
+        e.Handled = true;
+    }
+
+    private void FileTile_OnMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Border { DataContext: FileTileViewModel file })
+        {
+            var position = GetItemContextMenuPosition(e);
+            ViewModel.OpenFileContextMenu(file, position.X, position.Y);
+            e.Handled = true;
+        }
+    }
+
+    private void RenameTextBox_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox)
+        {
+            textBox.Focus();
+            textBox.SelectAll();
+        }
+    }
+
     private void DockCard_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (sender is Button { DataContext: CardViewModel card })
         {
             _dockDragStart = e.GetPosition(this);
             _dockDragCardId = card.Id;
+        }
+    }
+
+    private void DockCard_OnPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Button { DataContext: CardViewModel { IsVirtual: false } card })
+        {
+            var position = GetItemContextMenuPosition(e);
+            ViewModel.OpenFolderContextMenu(card, position.X, position.Y);
+            e.Handled = true;
         }
     }
 
@@ -249,6 +294,20 @@ public partial class MainWindow : Window
 
         cardId = value;
         return !string.IsNullOrWhiteSpace(cardId);
+    }
+
+    private Point GetItemContextMenuPosition(MouseEventArgs e)
+    {
+        const double menuWidth = 260;
+        const double menuHeight = 285;
+        const double margin = 12;
+
+        var position = e.GetPosition(CompositionRoot);
+        var maxLeft = Math.Max(margin, CompositionRoot.ActualWidth - menuWidth - margin);
+        var maxTop = Math.Max(margin, CompositionRoot.ActualHeight - menuHeight - margin);
+        return new Point(
+            Math.Clamp(position.X, margin, maxLeft),
+            Math.Clamp(position.Y, margin, maxTop));
     }
 
     private void UpdateDockWidth()

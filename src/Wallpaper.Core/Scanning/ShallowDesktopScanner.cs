@@ -141,7 +141,7 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
                 .ToArray();
 
             yield return new DesktopFolder(
-                CreateId("folder", relativePath),
+                DesktopItemId.ForFolder(relativePath),
                 directory.Name,
                 relativePath,
                 files);
@@ -234,7 +234,7 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
             }
 
             yield return new DesktopFile(
-                CreateId("file", relativePath),
+                DesktopItemId.ForFile(relativePath),
                 name,
                 relativePath,
                 extension,
@@ -279,6 +279,4 @@ public sealed class ShallowDesktopScanner(TimeProvider? timeProvider = null) : I
     private static string NormalizeRelativePath(string rootPath, string path) =>
         Path.GetRelativePath(rootPath, path).Replace(Path.DirectorySeparatorChar, '/');
 
-    private static string CreateId(string kind, string relativePath) =>
-        $"{kind}:{relativePath.ToUpperInvariant()}";
 }

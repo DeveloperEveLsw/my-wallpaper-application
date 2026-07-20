@@ -7,6 +7,9 @@ public sealed class WindowsFileNameValidatorTests
     [Theory]
     [InlineData("")]
     [InlineData("CON.txt")]
+    [InlineData("COM1.archive.txt")]
+    [InlineData("LPT¹.log")]
+    [InlineData("CONIN$")]
     [InlineData("bad?.txt")]
     [InlineData("trailing.")]
     [InlineData("trailing ")]
@@ -22,5 +25,14 @@ public sealed class WindowsFileNameValidatorTests
     public void Validate_AcceptsOrdinaryNames(string name)
     {
         Assert.True(WindowsFileNameValidator.Validate(name).IsValid);
+    }
+
+    [Fact]
+    public void Validate_RejectsNamesLongerThanAWindowsComponent()
+    {
+        var result = WindowsFileNameValidator.Validate(new string('a', 256));
+
+        Assert.False(result.IsValid);
+        Assert.Equal(FileNameError.TooLong, result.Error);
     }
 }
