@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Wallpaper.App.ViewModels;
 
@@ -96,9 +97,54 @@ public partial class MainWindow : Window
 
     private async void FileVisual_OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is Image { DataContext: FileTileViewModel file })
+        if (sender is Image image)
         {
-            await file.EnsureVisualLoadedAsync();
+            await EnsureFileVisualLoadedAsync(image);
+        }
+    }
+
+    private async void FileVisual_OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged && sender is Image { IsLoaded: true } image)
+        {
+            await EnsureFileVisualLoadedAsync(image);
+        }
+    }
+
+    private async void Window_OnDpiChanged(object sender, DpiChangedEventArgs e)
+    {
+        var reloadTasks = EnumerateVisualDescendants<Image>(this)
+            .Select(EnsureFileVisualLoadedAsync);
+        await Task.WhenAll(reloadTasks);
+    }
+
+    private static Task EnsureFileVisualLoadedAsync(Image image)
+    {
+        if (image.ActualWidth <= 0 || image.DataContext is not FileTileViewModel file)
+        {
+            return Task.CompletedTask;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(image);
+        var targetPixelWidth = Math.Max(1, (int)Math.Ceiling(image.ActualWidth * dpi.DpiScaleX));
+        return file.EnsureVisualLoadedAsync(targetPixelWidth);
+    }
+
+    private static IEnumerable<T> EnumerateVisualDescendants<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var descendant in EnumerateVisualDescendants<T>(child))
+            {
+                yield return descendant;
+            }
         }
     }
 

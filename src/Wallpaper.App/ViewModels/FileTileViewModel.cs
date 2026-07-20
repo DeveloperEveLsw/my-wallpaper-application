@@ -14,7 +14,8 @@ public sealed class FileTileViewModel(
     private readonly IFileVisualService _visualService = visualService;
     private readonly SemaphoreSlim _visualLoadGate = new(1, 1);
     private ImageSource? _visual;
-    private bool _visualLoadCompleted;
+    private int _loadedPixelWidth;
+    private bool _visualIsThumbnail;
 
     public DesktopFile File { get; } = file;
 
@@ -42,9 +43,13 @@ public sealed class FileTileViewModel(
         }
     }
 
-    public async Task EnsureVisualLoadedAsync(CancellationToken cancellationToken = default)
+    public async Task EnsureVisualLoadedAsync(
+        int targetPixelWidth,
+        CancellationToken cancellationToken = default)
     {
-        if (_visualLoadCompleted)
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetPixelWidth);
+
+        if (_loadedPixelWidth >= targetPixelWidth)
         {
             return;
         }
@@ -52,24 +57,33 @@ public sealed class FileTileViewModel(
         await _visualLoadGate.WaitAsync(cancellationToken);
         try
         {
-            if (_visualLoadCompleted)
+            if (_loadedPixelWidth >= targetPixelWidth)
             {
                 return;
             }
 
-            var shellIcon = await _visualService.LoadShellIconAsync(File, _absolutePath, cancellationToken);
-            if (shellIcon is not null)
+            var shellIcon = await _visualService.LoadShellIconAsync(
+                File,
+                _absolutePath,
+                targetPixelWidth,
+                cancellationToken);
+            if (shellIcon is not null && !_visualIsThumbnail)
             {
                 Visual = shellIcon;
             }
 
-            var thumbnail = await _visualService.LoadThumbnailAsync(File, _absolutePath, cancellationToken);
+            var thumbnail = await _visualService.LoadThumbnailAsync(
+                File,
+                _absolutePath,
+                targetPixelWidth,
+                cancellationToken);
             if (thumbnail is not null)
             {
                 Visual = thumbnail;
+                _visualIsThumbnail = true;
             }
 
-            _visualLoadCompleted = true;
+            _loadedPixelWidth = targetPixelWidth;
         }
         catch (Exception exception) when (
             exception is IOException or
@@ -79,7 +93,7 @@ public sealed class FileTileViewModel(
         {
             if (exception is not OperationCanceledException)
             {
-                _visualLoadCompleted = true;
+                _loadedPixelWidth = targetPixelWidth;
             }
         }
         finally

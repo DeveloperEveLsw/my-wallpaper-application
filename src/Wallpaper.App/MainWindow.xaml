@@ -14,6 +14,7 @@
         WindowState="Maximized"
         Background="#090D18"
         Foreground="#F7F9FF"
+        DpiChanged="Window_OnDpiChanged"
         KeyDown="Window_OnKeyDown"
         SizeChanged="Window_OnSizeChanged">
     <Window.Resources>
@@ -228,6 +229,8 @@
                                                             <Image Width="58"
                                                                    Height="62"
                                                                    Loaded="FileVisual_OnLoaded"
+                                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                                   SizeChanged="FileVisual_OnSizeChanged"
                                                                    Source="{Binding Visual}"
                                                                    Stretch="Uniform" />
                                                         </Grid>
