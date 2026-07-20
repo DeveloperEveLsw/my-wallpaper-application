@@ -120,13 +120,21 @@ public partial class MainWindow : Window
 
     private static Task EnsureFileVisualLoadedAsync(Image image)
     {
-        if (image.ActualWidth <= 0 || image.DataContext is not FileTileViewModel file)
+        if (image.DataContext is not FileTileViewModel file)
+        {
+            return Task.CompletedTask;
+        }
+
+        var displayWidth = image.ActualWidth > 0
+            ? image.ActualWidth
+            : image.Width;
+        if (double.IsNaN(displayWidth) || displayWidth <= 0)
         {
             return Task.CompletedTask;
         }
 
         var dpi = VisualTreeHelper.GetDpi(image);
-        var targetPixelWidth = Math.Max(1, (int)Math.Ceiling(image.ActualWidth * dpi.DpiScaleX));
+        var targetPixelWidth = Math.Max(1, (int)Math.Ceiling(displayWidth * dpi.DpiScaleX));
         return file.EnsureVisualLoadedAsync(targetPixelWidth);
     }
 
