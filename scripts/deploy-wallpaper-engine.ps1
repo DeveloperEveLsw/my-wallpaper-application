@@ -59,6 +59,11 @@ if ($publishExitCode -ne 0) {
     throw "dotnet publish failed with exit code $publishExitCode"
 }
 
+$windowsSdkAssembly = Join-Path $applicationDirectory 'Microsoft.Windows.SDK.NET.dll'
+if (-not (Test-Path -LiteralPath $windowsSdkAssembly)) {
+    throw "WebView2 composition dependency was not published: $windowsSdkAssembly"
+}
+
 Copy-Item -LiteralPath $manifestTemplate -Destination $projectFile -Force
 
 [pscustomobject]@{

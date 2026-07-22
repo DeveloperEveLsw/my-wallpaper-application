@@ -13,6 +13,8 @@ pause/resume이 함께 동작하는지 작은 장면으로 먼저 검증한다. 
 ## 결정
 
 - WPF 합성 surface로 일반 `WebView2`가 아닌 `WebView2CompositionControl`을 사용한다.
+- `WebView2CompositionControl`의 WinRT projection이 publish에 포함되도록 WPF 프로젝트는
+  `net10.0-windows10.0.17763.0`을 대상으로 한다.
 - 3D scene은 three.js `WebGLRenderer`로 구현한다.
 - scene은 registry에 descriptor와 factory를 등록한다. WPF는 scene id만 선택한다.
 - 현재 배포에 필요한 three.js module을 앱에 vendor한다. CDN에 의존하지 않는다.
