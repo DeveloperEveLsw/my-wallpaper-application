@@ -1,0 +1,11 @@
+{
+  "description": "실제 Windows 파일과 폴더를 Glass Dock으로 투영하는 로컬 WPF Application Wallpaper.",
+  "file": "app/Wallpaper.App.exe",
+  "general": {
+    "properties": {}
+  },
+  "title": "My Wallpaper Application · M6",
+  "type": "Application",
+  "version": 1,
+  "visibility": "private"
+}

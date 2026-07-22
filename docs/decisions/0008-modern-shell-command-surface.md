@@ -1,6 +1,6 @@
 # ADR 0008: Windows 11 현대식 Shell 명령 표면
 
-- 상태: 채택
+- 상태: [ADR 0009](0009-classic-shell-context-menu.md)로 대체됨
 - 날짜: 2026-07-21
 
 ## 결정

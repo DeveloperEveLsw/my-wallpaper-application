@@ -26,8 +26,8 @@ MVP 메뉴는 다음 순서를 사용한다.
 5. Windows 추가 옵션 표시
 
 휴지통 이동은 `IFileOperation`의 recycle 동작을 사용하고 영구 삭제로 폴백하지 않는다.
-`Windows 추가 옵션 표시`는 실제 Shell object의 `IContextMenu`에서 명령을 얻어 Windows
-11 Fluent 메뉴로 연다. `더 많은 옵션 표시`에서는 클래식 Shell 메뉴도 제공한다. 최초
+`Windows 추가 옵션 표시`는 실제 Shell object의 `IContextMenu`가 만든 클래식 메뉴를
+직접 연다. 최초
 우클릭 화면 좌표를 보존하며, Shell 명령과 외부 extension 실행 후에는 실제 파일 시스템을
 다시 스캔한다.
 
@@ -38,10 +38,10 @@ MVP 메뉴는 다음 순서를 사용한다.
 
 순수 월페이퍼 배경을 우클릭하면 Windows Explorer의 실제 바탕화면 배경 메뉴를 연다.
 파일·폴더 항목은 Glass 메뉴를 열고 Dock·모달의 빈 패널은 Windows 메뉴로 전달하지
-않는다. Desktop Shell folder의 배경 `IContextMenu`를 사용해 실제 명령을 열거하며
+않는다. Desktop `IShellView`의 `SVGIO_BACKGROUND` `IContextMenu`를 사용하며
 Windows 10/11과 호환되는 Shell 경계를 유지한다. M5 Standalone에서 실제 메뉴 내용과 입력 소유권을
-검증하고, Wallpaper Engine의 중복 우클릭·포커스 복귀·부모 HWND 배치는 M6 첫 통합
-게이트에서 검증한다.
+검증했고, M6 Wallpaper Engine에서 중복 없는 우클릭·Desktop 포커스 복귀·부모 HWND
+배치를 통합 검증했다.
 
 ### Dock 순서
 
@@ -66,5 +66,6 @@ Windows 10/11과 호환되는 Shell 경계를 유지한다. M5 Standalone에서 
 
 - [IContextMenu](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-icontextmenu)
 - [IFileOperation operation flags](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifileoperation-setoperationflags)
-- [IShellFolder::CreateViewObject](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishellfolder-createviewobject)
+- [IShellView::GetItemObject](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ishellview-getitemobject)
+- [SVGIO_BACKGROUND](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/ne-shobjidl_core-_svgio)
 - [SHGetDesktopFolder](https://learn.microsoft.com/en-us/windows/win32/api/shlobj_core/nf-shlobj_core-shgetdesktopfolder)

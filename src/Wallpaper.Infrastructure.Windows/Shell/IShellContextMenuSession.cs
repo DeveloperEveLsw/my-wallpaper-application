@@ -5,9 +5,7 @@ namespace Wallpaper.Infrastructure.Windows.Shell;
 [SupportedOSPlatform("windows")]
 public interface IShellContextMenuSession : IDisposable
 {
-    IReadOnlyList<ShellContextMenuEntry> Entries { get; }
+    int NativeMenuItemCount { get; }
 
-    void Invoke(uint commandId, int screenX, int screenY);
-
-    void ShowClassic(int screenX, int screenY);
+    void Show(int screenX, int screenY);
 }

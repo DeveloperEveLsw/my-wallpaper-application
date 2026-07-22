@@ -68,7 +68,7 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
     }
 
     [Fact]
-    public void CreateItemContextMenu_EnumeratesRealShellCommandsInStaSession()
+    public void CreateItemContextMenu_CreatesPopulatedNativeMenuInStaSession()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -85,17 +85,12 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
                 new FileCommandTarget(_rootPath, "commands.txt", FileCommandItemKind.File),
                 ownerWindow);
 
-            Assert.NotEmpty(session.Entries);
-            Assert.Contains(
-                Flatten(session.Entries),
-                entry => entry.Kind == ShellContextMenuEntryKind.Command &&
-                    entry.CommandId > 0 &&
-                    !string.IsNullOrWhiteSpace(entry.Text));
+            Assert.True(session.NativeMenuItemCount > 0);
         });
     }
 
     [Fact]
-    public void CreateDesktopContextMenu_EnumeratesRealShellCommandsInStaSession()
+    public void CreateDesktopContextMenu_CreatesPopulatedViewBackgroundMenuInStaSession()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -107,12 +102,7 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
             var service = new WindowsShellContextMenuService();
             using var session = service.CreateDesktopContextMenu(ownerWindow);
 
-            Assert.NotEmpty(session.Entries);
-            Assert.Contains(
-                Flatten(session.Entries),
-                entry => entry.Kind == ShellContextMenuEntryKind.Command &&
-                    entry.CommandId > 0 &&
-                    !string.IsNullOrWhiteSpace(entry.Text));
+            Assert.True(session.NativeMenuItemCount > 0);
         });
     }
 
@@ -121,19 +111,6 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
         if (Directory.Exists(_rootPath))
         {
             Directory.Delete(_rootPath, recursive: true);
-        }
-    }
-
-    private static IEnumerable<ShellContextMenuEntry> Flatten(
-        IEnumerable<ShellContextMenuEntry> entries)
-    {
-        foreach (var entry in entries)
-        {
-            yield return entry;
-            foreach (var child in Flatten(entry.Children))
-            {
-                yield return child;
-            }
         }
     }
 

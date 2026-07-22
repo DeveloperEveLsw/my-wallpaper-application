@@ -16,6 +16,9 @@
         Foreground="#F7F9FF"
         DpiChanged="Window_OnDpiChanged"
         KeyDown="Window_OnKeyDown"
+        MouseLeave="Window_OnMouseLeave"
+        PreviewMouseLeftButtonUp="Window_OnPreviewMouseLeftButtonUp"
+        PreviewMouseMove="Window_OnPreviewMouseMove"
         SizeChanged="Window_OnSizeChanged">
     <Window.Resources>
         <Style x:Key="GlassButtonStyle" TargetType="Button">
@@ -105,7 +108,7 @@
         <!-- Background input surface. UI elements above it own their own hit test regions. -->
         <Border Background="Transparent"
                 MouseLeftButtonDown="BackgroundSurface_OnMouseLeftButtonDown"
-                MouseRightButtonDown="BackgroundSurface_OnMouseRightButtonDown" />
+                MouseRightButtonUp="BackgroundSurface_OnMouseRightButtonUp" />
 
         <!-- Desktop UI Layer. -->
         <Grid>
@@ -214,11 +217,9 @@
                                                         CornerRadius="16"
                                                         Cursor="Hand"
                                                         Focusable="True"
-                                                        GiveFeedback="FileTile_OnGiveFeedback"
                                                         KeyDown="FileTile_OnKeyDown"
                                                         MouseLeftButtonDown="FileTile_OnMouseLeftButtonDown"
                                                         MouseRightButtonDown="FileTile_OnMouseRightButtonDown"
-                                                        PreviewMouseMove="FileTile_OnPreviewMouseMove"
                                                         ToolTip="{Binding Name}">
                                                     <Border.Style>
                                                         <Style TargetType="Border">
@@ -327,16 +328,11 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Button AllowDrop="True"
-                                                AutomationProperties.AutomationId="{Binding Id}"
+                                        <Button AutomationProperties.AutomationId="{Binding Id}"
                                                 Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                 CommandParameter="{Binding}"
-                                                DragLeave="DockCard_OnDragLeave"
-                                                DragOver="DockCard_OnDragOver"
-                                                Drop="DockCard_OnDrop"
                                                 PreviewKeyDown="DockCard_OnPreviewKeyDown"
                                                 PreviewMouseLeftButtonDown="DockCard_OnPreviewMouseLeftButtonDown"
-                                                PreviewMouseMove="DockCard_OnPreviewMouseMove"
                                                 PreviewMouseRightButtonDown="DockCard_OnPreviewMouseRightButtonDown"
                                                 Style="{StaticResource CardButtonStyle}">
                                             <Grid>
@@ -450,14 +446,10 @@
                             Background="#5AFFFFFF" />
 
                     <Button Grid.Column="2"
-                            AllowDrop="True"
                             AutomationProperties.AutomationId="{Binding Id}"
                             Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}"
                             DataContext="{Binding RootFilesCard}"
-                            DragLeave="DockCard_OnDragLeave"
-                            DragOver="DockCard_OnDragOver"
-                            Drop="DockCard_OnDrop"
                             Style="{StaticResource CardButtonStyle}">
                         <Grid>
                             <StackPanel>
@@ -532,7 +524,7 @@
             </Border>
         </Grid>
 
-        <!-- Transient Layer: item commands, modern Shell entry point, and file move UI. -->
+        <!-- Transient Layer: item commands, native Shell entry point, and file move UI. -->
         <Canvas Panel.ZIndex="4"
                 Visibility="{Binding IsItemContextMenuOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="260"
@@ -925,6 +917,6 @@
                 Background="#01000000"
                 MouseEnter="SettingsHotspot_OnMouseEnter"
                 MouseLeave="SettingsHotspot_OnMouseLeave"
-                MouseRightButtonDown="SettingsHotspot_OnMouseRightButtonDown" />
+                MouseRightButtonUp="SettingsHotspot_OnMouseRightButtonUp" />
     </Grid>
 </Window>

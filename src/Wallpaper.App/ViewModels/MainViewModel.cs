@@ -54,6 +54,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _isRootAvailable;
     private bool _rescanInProgress;
     private bool _rescanRequested;
+    private bool _rescanDeferredForInputInteraction;
+    private int _inputInteractionDepth;
     private Task? _rescanCompletion;
     private string? _openCardId;
     private string? _selectedFileId;
@@ -79,6 +81,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _isNotificationOpen;
     private string _notificationText = string.Empty;
     private bool _notificationIsError;
+    private string _hostStatus = "Standalone · Starting";
     private bool _disposed;
 
     public MainViewModel(
@@ -389,7 +392,40 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _notificationIsError, value);
     }
 
-    public string HostStatus => "Standalone · M5 Windows Shell and input";
+    public string HostStatus
+    {
+        get => _hostStatus;
+        private set => SetProperty(ref _hostStatus, value);
+    }
+
+    public void UpdateHostStatus(string hostStatus)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(hostStatus);
+        HostStatus = hostStatus;
+    }
+
+    public void BeginInputInteraction()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _inputInteractionDepth++;
+    }
+
+    public async Task EndInputInteractionAsync()
+    {
+        if (_inputInteractionDepth <= 0)
+        {
+            return;
+        }
+
+        _inputInteractionDepth--;
+        if (_inputInteractionDepth != 0 || !_rescanDeferredForInputInteraction)
+        {
+            return;
+        }
+
+        _rescanDeferredForInputInteraction = false;
+        await RescanAsync();
+    }
 
     public async Task InitializeAsync()
     {
@@ -1477,6 +1513,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 if (_disposed)
                 {
+                    return;
+                }
+
+                if (_inputInteractionDepth > 0)
+                {
+                    _rescanDeferredForInputInteraction = true;
+                    StatusText = args.Reason == RootChangeReason.WatcherError
+                        ? "입력 작업이 끝나면 변경 감시 오류를 확인합니다."
+                        : "입력 작업이 끝나면 외부 파일 변경을 반영합니다.";
                     return;
                 }
 

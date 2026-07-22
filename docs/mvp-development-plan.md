@@ -1,7 +1,7 @@
 # MVP 개발 계획
 
 - 상태: 구현 진행 중
-- 현재 단계: M5 완료, M6 Wallpaper Engine 로컬 호스트 준비
+- 현재 단계: M6 완료, M7 안정화 준비
 
 ## M0 — 기준선
 
@@ -66,8 +66,8 @@
 - 빈 배경의 실제 Windows Desktop 컨텍스트 메뉴
 - Dock·모달·배경 hit-test 경계
 
-통과 상태: 완료. 파일·폴더와 Desktop의 실제 Shell 명령을 Windows 11 Fluent 메뉴로
-표시하고, `더 많은 옵션 표시`의 owner-drawn 클래식 호환 메뉴, 최초 우클릭 좌표 보존,
+통과 상태: 완료. 파일·폴더와 Desktop 뷰 배경의 실제 클래식 Shell 메뉴를 직접
+표시하고, owner-drawn 확장 호환성, 최초 우클릭 좌표 보존,
 명시적 hit-test 경계와 메뉴 종료 뒤 재스캔을 구현했다. Windows 11 Standalone에서 메뉴
 내용·명령 실행·취소·포커스와 입력 소유권을 검증했다.
 
@@ -80,6 +80,15 @@
 - WPF HWND 탐지·배치·종료
 - pause/resume, reload와 Explorer 재시작 복구
 - 원본 Desktop 아이콘 숨김은 Wallpaper Engine 설정 사용
+
+통과 상태: 완료. 실제 Wallpaper Engine 2.8.42에서 전달된 `-parentHWND` 아래에 WPF
+HWND를 배치하고, 우클릭 단일 메뉴·Desktop 포커스 복귀·pause/resume·reload를 검증했다.
+Explorer 재시작으로 끊어진 worker 계층은 감지 후 제한된 엔진 재시작으로 복구하며,
+WorkerW 입력 라우팅은 주 모니터 영역으로 제한한다. 엔진 종료는 suspend되지 않는
+watchdog이 고아 WPF 프로세스 없이 처리하고 앱·엔진 강제 종료 뒤 Explorer 입력 상태도
+복원한다. 원본 Desktop 아이콘은 Wallpaper Engine 공식 제어 명령만 사용한다.
+
+검증 기록: [M6 검수 기록](m6-validation.md)
 
 ## M7 — 안정화
 
