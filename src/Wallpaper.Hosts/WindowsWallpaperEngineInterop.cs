@@ -28,14 +28,17 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const uint ShowWindowFlag = 0x0040;
     private const uint NoMove = 0x0002;
     private const uint NoSize = 0x0001;
+    private const uint NoZOrder = 0x0004;
     private const uint NoOwnerZOrder = 0x0200;
     private const uint DwmWindowAttributeCloaked = 14;
+    private const int LowLevelMouseHookId = 14;
+    private const uint QuitMessage = 0x0012;
 
     private readonly object _interactiveInputLock = new();
     private nint _interactiveIntermediateWindow;
     private nint _interactiveWorkerWindow;
     private nint _desktopViewWindow;
-    private NativeRect _interactiveRegion;
+    private LowLevelMouseHook? _mouseInputHook;
     private bool _interactiveWorkerRaised;
 
     public bool IsWindow(nint windowHandle) => NativeIsWindow(windowHandle);
@@ -200,16 +203,27 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 CaptureInteractiveDesktop(parentWindowHandle);
             }
 
-            EnableInteractiveWorker();
+            _mouseInputHook ??= new LowLevelMouseHook(RouteMouseInput);
+            if (!GetCursorPos(out var cursorPosition))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            UpdateInteractiveWorker(cursorPosition.X, cursorPosition.Y);
         }
     }
 
     public void RestoreInteractiveInput()
     {
+        LowLevelMouseHook? mouseInputHook;
         lock (_interactiveInputLock)
         {
+            mouseInputHook = _mouseInputHook;
+            _mouseInputHook = null;
             RestoreInteractiveInputCore();
         }
+
+        mouseInputHook?.Dispose();
     }
 
     internal static nint GetInteractiveWorkerWindow(nint intermediateWindow)
@@ -311,11 +325,46 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         _interactiveIntermediateWindow = intermediateWindow;
         _interactiveWorkerWindow = workerWindow;
         _desktopViewWindow = desktopView;
-        _interactiveRegion = default;
         _interactiveWorkerRaised = false;
+
+        if (SetWindowRgn(workerWindow, 0, true) == 0)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
     }
 
-    private void EnableInteractiveWorker()
+    private void RouteMouseInput(int x, int y)
+    {
+        lock (_interactiveInputLock)
+        {
+            if (_interactiveIntermediateWindow == 0 ||
+                _interactiveWorkerWindow == 0)
+            {
+                return;
+            }
+
+            UpdateInteractiveWorker(x, y);
+        }
+    }
+
+    private void UpdateInteractiveWorker(int cursorX, int cursorY)
+    {
+        if (!GetWindowRect(_interactiveIntermediateWindow, out var intermediateRectangle))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        var enableInput = WallpaperEngineInputScope.Contains(
+            cursorX,
+            cursorY,
+            intermediateRectangle.Left,
+            intermediateRectangle.Top,
+            intermediateRectangle.Right,
+            intermediateRectangle.Bottom);
+        SetInteractiveWorkerState(enableInput);
+    }
+
+    private void SetInteractiveWorkerState(bool enableInput)
     {
         var workerWindow = _interactiveWorkerWindow;
         if (!NativeIsWindow(workerWindow))
@@ -323,19 +372,24 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             throw new InvalidOperationException("상호작용할 Desktop HWND가 더 이상 유효하지 않습니다.");
         }
 
-        var stateChanged = !IsWindowEnabled(workerWindow);
+        var stateChanged = IsWindowEnabled(workerWindow) != enableInput;
         if (stateChanged)
         {
-            _ = EnableWindow(workerWindow, true);
+            _ = EnableWindow(workerWindow, enableInput);
         }
 
-        if (!IsWindowEnabled(workerWindow))
+        if (IsWindowEnabled(workerWindow) != enableInput)
         {
-            throw new InvalidOperationException("Wallpaper Engine WorkerW를 활성화하지 못했습니다.");
+            throw new InvalidOperationException(
+                enableInput
+                    ? "Wallpaper Engine WorkerW를 활성화하지 못했습니다."
+                    : "Wallpaper Engine WorkerW 입력을 격리하지 못했습니다.");
         }
 
         var extendedStyle = GetWindowLongPtr(workerWindow, ExtendedWindowStyleIndex).ToInt64();
-        var interactiveStyle = extendedStyle & ~TransparentExtendedWindowStyle;
+        var interactiveStyle = enableInput
+            ? extendedStyle & ~TransparentExtendedWindowStyle
+            : extendedStyle | TransparentExtendedWindowStyle;
         var styleChanged = interactiveStyle != extendedStyle;
         if (styleChanged)
         {
@@ -345,10 +399,27 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 new nint(interactiveStyle));
         }
 
-        var regionChanged = EnsureInteractiveRegion();
-        if (!stateChanged && !styleChanged && !regionChanged && _interactiveWorkerRaised)
+        if (!enableInput)
+        {
+            _interactiveWorkerRaised = false;
+        }
+
+        if (!stateChanged &&
+            !styleChanged &&
+            (!enableInput || _interactiveWorkerRaised))
         {
             return;
+        }
+
+        var placementFlags = NoMove |
+            NoSize |
+            NoActivate |
+            NoOwnerZOrder |
+            FrameChanged |
+            ShowWindowFlag;
+        if (!enableInput)
+        {
+            placementFlags |= NoZOrder;
         }
 
         if (!SetWindowPos(
@@ -358,12 +429,12 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 0,
                 0,
                 0,
-                NoMove | NoSize | NoActivate | NoOwnerZOrder | FrameChanged | ShowWindowFlag))
+                placementFlags))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
 
-        _interactiveWorkerRaised = true;
+        _interactiveWorkerRaised = enableInput;
     }
 
     private void RestoreInteractiveInputCore()
@@ -373,7 +444,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         _interactiveIntermediateWindow = 0;
         _interactiveWorkerWindow = 0;
         _desktopViewWindow = 0;
-        _interactiveRegion = default;
         _interactiveWorkerRaised = false;
 
         if (!NativeIsWindow(workerWindow))
@@ -409,88 +479,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 0,
                 0,
                 NoMove | NoSize | NoActivate | NoOwnerZOrder | FrameChanged);
-        }
-    }
-
-    private bool EnsureInteractiveRegion()
-    {
-        if (!GetWindowRect(_interactiveIntermediateWindow, out var intermediateRectangle))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        var topLeft = new NativePoint(intermediateRectangle.Left, intermediateRectangle.Top);
-        var bottomRight = new NativePoint(intermediateRectangle.Right, intermediateRectangle.Bottom);
-        if (!ScreenToClient(_interactiveWorkerWindow, ref topLeft) ||
-            !ScreenToClient(_interactiveWorkerWindow, ref bottomRight))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        var desiredRegion = new NativeRect
-        {
-            Left = topLeft.X,
-            Top = topLeft.Y,
-            Right = bottomRight.X,
-            Bottom = bottomRight.Y,
-        };
-        if (desiredRegion.Equals(_interactiveRegion) &&
-            HasExpectedWindowRegion(_interactiveWorkerWindow, desiredRegion))
-        {
-            return false;
-        }
-
-        var region = CreateRectRgn(
-            desiredRegion.Left,
-            desiredRegion.Top,
-            desiredRegion.Right,
-            desiredRegion.Bottom);
-        if (region == 0)
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        if (SetWindowRgn(_interactiveWorkerWindow, region, true) == 0)
-        {
-            _ = DeleteObject(region);
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        _interactiveRegion = desiredRegion;
-        return true;
-    }
-
-    private static bool HasExpectedWindowRegion(nint windowHandle, NativeRect expectedRegion)
-    {
-        var actual = CreateRectRgn(0, 0, 0, 0);
-        var expected = CreateRectRgn(
-            expectedRegion.Left,
-            expectedRegion.Top,
-            expectedRegion.Right,
-            expectedRegion.Bottom);
-        if (actual == 0 || expected == 0)
-        {
-            if (actual != 0)
-            {
-                _ = DeleteObject(actual);
-            }
-
-            if (expected != 0)
-            {
-                _ = DeleteObject(expected);
-            }
-
-            return false;
-        }
-
-        try
-        {
-            return GetWindowRgn(windowHandle, actual) != 0 && EqualRgn(actual, expected);
-        }
-        finally
-        {
-            _ = DeleteObject(actual);
-            _ = DeleteObject(expected);
         }
     }
 
@@ -579,25 +567,11 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint windowHandle, out NativeRect rectangle);
 
-    [DllImport("gdi32.dll", SetLastError = true)]
-    private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
-
-    [DllImport("gdi32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeleteObject(nint graphicsObject);
-
-    [DllImport("gdi32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool EqualRgn(nint firstRegion, nint secondRegion);
-
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int SetWindowRgn(
         nint windowHandle,
         nint region,
         [MarshalAs(UnmanagedType.Bool)] bool redraw);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern int GetWindowRgn(nint windowHandle, nint region);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     private static extern nint GetWindowLongPtr(nint windowHandle, int index);
@@ -622,7 +596,181 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         uint attribute,
         out int value,
         int valueSize);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out NativePoint point);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
+    private static extern nint SetWindowsHookEx(
+        int hookId,
+        LowLevelMouseProc hookProcedure,
+        nint moduleHandle,
+        uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(nint hookHandle);
+
+    [DllImport("user32.dll")]
+    private static extern nint CallNextHookEx(
+        nint hookHandle,
+        int code,
+        nuint parameter,
+        nint data);
+
+    [DllImport("user32.dll", EntryPoint = "GetMessageW", SetLastError = true)]
+    private static extern int GetMessage(
+        out NativeMessage message,
+        nint windowHandle,
+        uint minimumMessage,
+        uint maximumMessage);
+
+    [DllImport("user32.dll", EntryPoint = "PeekMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(
+        out NativeMessage message,
+        nint windowHandle,
+        uint minimumMessage,
+        uint maximumMessage,
+        uint removeMessage);
+
+    [DllImport("user32.dll", EntryPoint = "PostThreadMessageW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostThreadMessage(
+        uint threadId,
+        uint message,
+        nuint parameter,
+        nint data);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
 #pragma warning restore SYSLIB1054
+
+    private sealed class LowLevelMouseHook : IDisposable
+    {
+        private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(1);
+
+        private readonly Action<int, int> _routeInput;
+        private readonly LowLevelMouseProc _hookProcedure;
+        private readonly ManualResetEventSlim _started = new();
+        private readonly Thread _thread;
+        private Exception? _startupException;
+        private nint _hookHandle;
+        private uint _threadId;
+        private bool _disposed;
+
+        public LowLevelMouseHook(Action<int, int> routeInput)
+        {
+            _routeInput = routeInput;
+            _hookProcedure = HookProcedure;
+            _thread = new Thread(Run)
+            {
+                IsBackground = true,
+                Name = "Wallpaper Engine monitor input router",
+            };
+            _thread.Start();
+
+            if (!_started.Wait(StartupTimeout))
+            {
+                Dispose();
+                throw new TimeoutException("Wallpaper Engine 마우스 입력 라우터를 시작하지 못했습니다.");
+            }
+
+            if (_startupException is not null)
+            {
+                Dispose();
+                throw new InvalidOperationException(
+                    "Wallpaper Engine 마우스 입력 라우터를 시작하지 못했습니다.",
+                    _startupException);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            var hookHandle = Interlocked.Exchange(ref _hookHandle, 0);
+            if (hookHandle != 0)
+            {
+                _ = UnhookWindowsHookEx(hookHandle);
+            }
+
+            if (_threadId != 0)
+            {
+                _ = PostThreadMessage(_threadId, QuitMessage, 0, 0);
+            }
+
+            if (_thread != Thread.CurrentThread && _thread.IsAlive)
+            {
+                _ = _thread.Join(ShutdownTimeout);
+            }
+
+            _started.Dispose();
+        }
+
+        private void Run()
+        {
+            _threadId = GetCurrentThreadId();
+            _ = PeekMessage(out _, 0, 0, 0, 0);
+            _hookHandle = SetWindowsHookEx(
+                LowLevelMouseHookId,
+                _hookProcedure,
+                0,
+                0);
+            if (_hookHandle == 0)
+            {
+                _startupException = new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            _started.Set();
+            if (_hookHandle == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                while (GetMessage(out _, 0, 0, 0) > 0)
+                {
+                }
+            }
+            finally
+            {
+                var hookHandle = Interlocked.Exchange(ref _hookHandle, 0);
+                if (hookHandle != 0)
+                {
+                    _ = UnhookWindowsHookEx(hookHandle);
+                }
+            }
+        }
+
+        private nint HookProcedure(int code, nuint parameter, nint data)
+        {
+            if (code >= 0 && data != 0)
+            {
+                try
+                {
+                    var hookData = Marshal.PtrToStructure<LowLevelMouseHookData>(data);
+                    _routeInput(hookData.Point.X, hookData.Point.Y);
+                }
+                catch
+                {
+                    // The regular host poll reports native routing failures without
+                    // blocking input delivery to the rest of the desktop.
+                }
+            }
+
+            return CallNextHookEx(0, code, parameter, data);
+        }
+    }
+
+    private delegate nint LowLevelMouseProc(int code, nuint parameter, nint data);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
@@ -638,5 +786,27 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     {
         public int X = x;
         public int Y = y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelMouseHookData
+    {
+        public NativePoint Point;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public nuint ExtraInformation;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMessage
+    {
+        public nint WindowHandle;
+        public uint Message;
+        public nuint Parameter;
+        public nint Data;
+        public uint Time;
+        public NativePoint Point;
+        public uint PrivateData;
     }
 }

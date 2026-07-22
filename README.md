@@ -25,7 +25,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 - 실제 Windows 클래식 Shell 추가 옵션과 바탕화면 배경 메뉴 구현
 - 추가 옵션은 최초 우클릭 위치에 네이티브 메뉴로 직접 표시
 - Wallpaper Engine `-parentHWND` child 배치, host 상태와 렌더 pause/resume 구현
-- Wallpaper Engine WorkerW 좌·우클릭 라우팅과 주 모니터 입력 region 격리 구현
+- Wallpaper Engine WorkerW 좌·우클릭 라우팅과 포인터 위치 기반 주 모니터 입력 격리 구현
 - 앱 reload, Explorer worker 복구와 앱·엔진 강제 종료 입력 복원 watchdog 구현
 - Wallpaper Engine 공식 제어 명령을 통한 Windows 원본 Desktop 아이콘 숨김·복원
 - 다음 단계는 M7 성능·DPI·대량 항목·반복 복구 안정화
