@@ -18,11 +18,21 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'wallpaper-engine-common.ps1')
 
 if ($Deploy) {
-    $deployment = & (Join-Path $PSScriptRoot 'deploy-wallpaper-engine.ps1') `
-        -WallpaperEnginePath $WallpaperEnginePath `
-        -ProjectName $ProjectName `
-        -Configuration $Configuration `
-        -FrameworkDependent:$FrameworkDependent
+    $deployment = @(
+        & (Join-Path $PSScriptRoot 'deploy-wallpaper-engine.ps1') `
+            -WallpaperEnginePath $WallpaperEnginePath `
+            -ProjectName $ProjectName `
+            -Configuration $Configuration `
+            -FrameworkDependent:$FrameworkDependent
+    ) | Where-Object {
+        $null -ne $_ -and
+        $null -ne $_.PSObject.Properties['WallpaperEnginePath']
+    } | Select-Object -Last 1
+
+    if ($null -eq $deployment) {
+        throw '배포 결과에서 Wallpaper Engine 경로를 확인하지 못했습니다.'
+    }
+
     $WallpaperEnginePath = $deployment.WallpaperEnginePath
 }
 

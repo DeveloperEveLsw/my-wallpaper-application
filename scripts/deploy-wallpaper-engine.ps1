@@ -53,9 +53,10 @@ if ($FrameworkDependent) {
     $publishArguments += '--self-contained'
 }
 
-& $dotnet @publishArguments
-if ($LASTEXITCODE -ne 0) {
-    throw "dotnet publish failed with exit code $LASTEXITCODE"
+& $dotnet @publishArguments | Out-Host
+$publishExitCode = $LASTEXITCODE
+if ($publishExitCode -ne 0) {
+    throw "dotnet publish failed with exit code $publishExitCode"
 }
 
 Copy-Item -LiteralPath $manifestTemplate -Destination $projectFile -Force
