@@ -3,6 +3,7 @@
     <ProjectReference Include="..\Wallpaper.Core\Wallpaper.Core.csproj" />
     <ProjectReference Include="..\Wallpaper.Hosts\Wallpaper.Hosts.csproj" />
     <ProjectReference Include="..\Wallpaper.Rendering.Abstractions\Wallpaper.Rendering.Abstractions.csproj" />
+    <ProjectReference Include="..\Wallpaper.Rendering.WebView\Wallpaper.Rendering.WebView.csproj" />
     <ProjectReference Include="..\Wallpaper.Infrastructure.Windows\Wallpaper.Infrastructure.Windows.csproj" />
   </ItemGroup>
 

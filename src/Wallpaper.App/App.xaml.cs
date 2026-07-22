@@ -9,6 +9,7 @@ using Wallpaper.Infrastructure.Windows.Shell;
 using Wallpaper.Infrastructure.Windows.Visuals;
 using Wallpaper.Infrastructure.Windows.Watching;
 using Wallpaper.Rendering.Abstractions;
+using Wallpaper.Rendering.WebView;
 
 namespace Wallpaper.App;
 
@@ -36,7 +37,8 @@ public partial class App : Application
             return;
         }
 
-        _renderLifecycle = new PlaceholderRenderLifecycle();
+        var visualizerLifecycle = new WebVisualizerRenderLifecycle();
+        _renderLifecycle = visualizerLifecycle;
         await _renderLifecycle.StartAsync();
 
         try
@@ -74,7 +76,8 @@ public partial class App : Application
         var window = new MainWindow(
             viewModel,
             new WindowsShellContextMenuService(),
-            _wallpaperHost);
+            _wallpaperHost,
+            visualizerLifecycle);
         MainWindow = window;
         window.Show();
         await viewModel.InitializeAsync();

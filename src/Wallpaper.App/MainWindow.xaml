@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:rendering="clr-namespace:Wallpaper.Rendering.WebView;assembly=Wallpaper.Rendering.WebView"
         mc:Ignorable="d"
         Title="My Wallpaper Application"
         Width="1440"
@@ -74,7 +75,7 @@
     </Window.Resources>
 
     <Grid x:Name="CompositionRoot">
-        <!-- Wallpaper Render Layer: placeholder only. -->
+        <!-- Wallpaper Render Layer: composition-compatible WebView2/three.js surface. -->
         <Grid IsHitTestVisible="False">
             <Grid.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -103,6 +104,7 @@
                     <BlurEffect Radius="120" />
                 </Ellipse.Effect>
             </Ellipse>
+            <rendering:WebVisualizerSurface x:Name="VisualizerSurface" />
         </Grid>
 
         <!-- Background input surface. UI elements above it own their own hit test regions. -->

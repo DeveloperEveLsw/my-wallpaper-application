@@ -5,6 +5,7 @@
     <Project Path="src/Wallpaper.Hosts/Wallpaper.Hosts.csproj" />
     <Project Path="src/Wallpaper.Infrastructure.Windows/Wallpaper.Infrastructure.Windows.csproj" />
     <Project Path="src/Wallpaper.Rendering.Abstractions/Wallpaper.Rendering.Abstractions.csproj" />
+    <Project Path="src/Wallpaper.Rendering.WebView/Wallpaper.Rendering.WebView.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Wallpaper.Core.Tests/Wallpaper.Core.Tests.csproj" />

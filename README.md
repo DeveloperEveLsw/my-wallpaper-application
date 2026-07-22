@@ -10,6 +10,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 ## 현재 상태
 
 - M6 Wallpaper Engine 로컬 Application Wallpaper 구현·Windows 실기기 검수 완료
+- WebView2/three.js 렌더 경로 검증용 `Baseline` 기본 장면 구현
 - WPF 애플리케이션이 제품 본체
 - Wallpaper Engine 호스트 구현 완료, Lively 호스트는 후속 범위
 - Wallpaper Engine은 로컬 Application Wallpaper로 사용하며 공개 Workshop 배포는 범위 밖
@@ -39,6 +40,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 - [네이티브 Shell 메뉴 HWND 결정](docs/decisions/0007-native-shell-menu-hosting.md)
 - [클래식 Shell 메뉴 기본 표면 결정](docs/decisions/0009-classic-shell-context-menu.md)
 - [Wallpaper Engine 호스트 수명주기 결정](docs/decisions/0010-wallpaper-engine-application-host.md)
+- [WebView2/three.js Visual Gallery 결정](docs/decisions/0011-webview-three-visual-gallery.md)
 - [MVP 개발 계획](docs/mvp-development-plan.md)
 - [M5 검수 기록](docs/m5-validation.md)
 - [M6 검수 기록](docs/m6-validation.md)
@@ -46,6 +48,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 ## 요구 환경
 
 - .NET SDK 10.0.302 이상 10.0 feature band
+- Node.js 22 이상(visualizer 스크립트 검사에만 필요, 앱 실행에는 불필요)
 - WSL2 Ubuntu 24.04 또는 동등한 Linux 개발 환경
 - 실제 UI 검증용 Windows 10/11
 

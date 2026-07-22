@@ -8,6 +8,7 @@ using Wallpaper.App.ViewModels;
 using Wallpaper.Core.FileOperations;
 using Wallpaper.Hosts;
 using Wallpaper.Infrastructure.Windows.Shell;
+using Wallpaper.Rendering.WebView;
 
 namespace Wallpaper.App;
 
@@ -17,6 +18,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _settingsHoverTimer;
     private readonly IShellContextMenuService _shellContextMenuService;
     private readonly IWallpaperHost _wallpaperHost;
+    private readonly WebVisualizerRenderLifecycle _visualizerLifecycle;
     private Point _dockDragStart;
     private string? _dockDragCardId;
     private Point _fileDragStart;
@@ -30,12 +32,15 @@ public partial class MainWindow : Window
     public MainWindow(
         MainViewModel viewModel,
         IShellContextMenuService shellContextMenuService,
-        IWallpaperHost wallpaperHost)
+        IWallpaperHost wallpaperHost,
+        WebVisualizerRenderLifecycle visualizerLifecycle)
     {
         InitializeComponent();
         ViewModel = viewModel;
         _shellContextMenuService = shellContextMenuService;
         _wallpaperHost = wallpaperHost;
+        _visualizerLifecycle = visualizerLifecycle;
+        _visualizerLifecycle.AttachSurface(VisualizerSurface);
         DataContext = viewModel;
 
         if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
@@ -75,6 +80,7 @@ public partial class MainWindow : Window
             _settingsHoverTimer.Stop();
             _wallpaperHost.StatusChanged -= WallpaperHost_OnStatusChanged;
             _wallpaperHost.ExitRequested -= WallpaperHost_OnExitRequested;
+            _visualizerLifecycle.DetachSurface(VisualizerSurface);
             ViewModel.Dispose();
         };
     }
