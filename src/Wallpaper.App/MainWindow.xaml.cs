@@ -743,7 +743,7 @@ public partial class MainWindow : Window
         string? errorMessage = null;
         try
         {
-            var ownerWindow = new WindowInteropHelper(this).Handle;
+            var ownerWindow = GetInputWindowHandle();
             using var session = createSession(ownerWindow);
             session.Show(screenPosition.X, screenPosition.Y);
         }
@@ -773,6 +773,14 @@ public partial class MainWindow : Window
                 }
             }
         }
+    }
+
+    private nint GetInputWindowHandle()
+    {
+        var overlayWindow = _wallpaperOverlayPresenter?.WindowHandle ?? 0;
+        return overlayWindow != 0
+            ? overlayWindow
+            : new WindowInteropHelper(this).Handle;
     }
 
     private void ShowFileDragPreview(string fileName, Point position)

@@ -29,8 +29,11 @@ internal sealed class WallpaperOverlayPresenter : IDisposable
 
         Root = new Grid
         {
-            Background = System.Windows.Media.Brushes.Transparent,
-            DataContext = compositionRoot.DataContext,
+            // A per-pixel transparent window is skipped by native hit testing wherever
+            // its composed alpha is zero. Keep one alpha step so the background input
+            // surface receives mouse events without visibly covering the visualizer.
+            Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(1, 0, 0, 0)),
             Focusable = true,
         };
 
@@ -49,6 +52,7 @@ internal sealed class WallpaperOverlayPresenter : IDisposable
             AllowsTransparency = true,
             Background = System.Windows.Media.Brushes.Transparent,
             Content = Root,
+            DataContext = compositionRoot.DataContext,
             Foreground = new System.Windows.Media.SolidColorBrush(
                 System.Windows.Media.Color.FromRgb(247, 249, 255)),
             ResizeMode = ResizeMode.NoResize,
@@ -67,6 +71,8 @@ internal sealed class WallpaperOverlayPresenter : IDisposable
     }
 
     public Grid Root { get; }
+
+    public nint WindowHandle => new WindowInteropHelper(_window).Handle;
 
     public void Show(nint parentWindowHandle, double width, double height)
     {
