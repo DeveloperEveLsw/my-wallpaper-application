@@ -76,7 +76,8 @@
 
     <Grid x:Name="CompositionRoot">
         <!-- Wallpaper Render Layer: composition-compatible WebView2/three.js surface. -->
-        <Grid IsHitTestVisible="False">
+        <Grid x:Name="VisualizerLayer"
+              IsHitTestVisible="False">
             <Grid.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                     <GradientStop Offset="0" Color="#09101E" />

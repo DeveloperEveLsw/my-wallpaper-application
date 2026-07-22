@@ -18,6 +18,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _settingsHoverTimer;
     private readonly IShellContextMenuService _shellContextMenuService;
     private readonly IWallpaperHost _wallpaperHost;
+    private readonly FrameworkElement _interactionRoot;
+    private readonly WallpaperOverlayPresenter? _wallpaperOverlayPresenter;
     private readonly WebVisualizerRenderLifecycle _visualizerLifecycle;
     private Point _dockDragStart;
     private string? _dockDragCardId;
@@ -46,9 +48,18 @@ public partial class MainWindow : Window
         VisualizerSurface.InitializationCompleted += VisualizerSurface_OnInitializationCompleted;
         VisualizerSurface.InitializationFailed += VisualizerSurface_OnInitializationFailed;
         DataContext = viewModel;
+        _interactionRoot = CompositionRoot;
 
         if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
         {
+            _wallpaperOverlayPresenter = new WallpaperOverlayPresenter(
+                CompositionRoot,
+                VisualizerLayer);
+            _interactionRoot = _wallpaperOverlayPresenter.Root;
+            _interactionRoot.KeyDown += Window_OnKeyDown;
+            _interactionRoot.MouseLeave += Window_OnMouseLeave;
+            _interactionRoot.PreviewMouseLeftButtonUp += Window_OnPreviewMouseLeftButtonUp;
+            _interactionRoot.PreviewMouseMove += Window_OnPreviewMouseMove;
             WindowState = WindowState.Normal;
             ResizeMode = ResizeMode.NoResize;
             ShowActivated = false;
@@ -86,6 +97,15 @@ public partial class MainWindow : Window
             _wallpaperHost.ExitRequested -= WallpaperHost_OnExitRequested;
             VisualizerSurface.InitializationCompleted -= VisualizerSurface_OnInitializationCompleted;
             VisualizerSurface.InitializationFailed -= VisualizerSurface_OnInitializationFailed;
+            if (_wallpaperOverlayPresenter is not null)
+            {
+                _interactionRoot.KeyDown -= Window_OnKeyDown;
+                _interactionRoot.MouseLeave -= Window_OnMouseLeave;
+                _interactionRoot.PreviewMouseLeftButtonUp -= Window_OnPreviewMouseLeftButtonUp;
+                _interactionRoot.PreviewMouseMove -= Window_OnPreviewMouseMove;
+                _wallpaperOverlayPresenter.Dispose();
+            }
+
             _visualizerLifecycle.DetachSurface(VisualizerSurface);
             ViewModel.Dispose();
         };
@@ -131,9 +151,19 @@ public partial class MainWindow : Window
         ViewModel.UpdateHostStatus(e.Status.DisplayText);
         if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
         {
-            Opacity = e.Status.State is HostRuntimeState.Active or HostRuntimeState.Paused
-                ? 1
-                : 0;
+            var isVisible = e.Status.State is HostRuntimeState.Active or HostRuntimeState.Paused;
+            Opacity = isVisible ? 1 : 0;
+            if (isVisible)
+            {
+                _wallpaperOverlayPresenter?.Show(
+                    e.Status.ParentWindowHandle,
+                    ActualWidth,
+                    ActualHeight);
+            }
+            else
+            {
+                _wallpaperOverlayPresenter?.Hide();
+            }
         }
     }
 
@@ -209,11 +239,15 @@ public partial class MainWindow : Window
         if (IsContextMenuKey(e))
         {
             e.Handled = true;
-            await ShowDesktopContextMenuAsync(GetElementCenterOnScreen(CompositionRoot));
+            await ShowDesktopContextMenuAsync(GetElementCenterOnScreen(_interactionRoot));
         }
     }
 
-    private void Window_OnSizeChanged(object sender, SizeChangedEventArgs e) => UpdateDockWidth();
+    private void Window_OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateDockWidth();
+        _wallpaperOverlayPresenter?.Resize(ActualWidth, ActualHeight);
+    }
 
     private async void FileVisual_OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -233,7 +267,7 @@ public partial class MainWindow : Window
 
     private async void Window_OnDpiChanged(object sender, DpiChangedEventArgs e)
     {
-        var reloadTasks = EnumerateVisualDescendants<Image>(this)
+        var reloadTasks = EnumerateVisualDescendants<Image>(_interactionRoot)
             .Select(EnsureFileVisualLoadedAsync);
         await Task.WhenAll(reloadTasks);
     }
@@ -292,7 +326,7 @@ public partial class MainWindow : Window
         else if (ViewModel.RootPath is not null && !ViewModel.IsBusy)
         {
             _dockDragCardId = null;
-            _fileDragStart = e.GetPosition(this);
+            _fileDragStart = e.GetPosition(_interactionRoot);
             _fileDragSource = new FileCommandTarget(
                 ViewModel.RootPath,
                 file.RelativePath,
@@ -376,7 +410,7 @@ public partial class MainWindow : Window
         {
             _fileDragSource = null;
             _fileDragSourceFile = null;
-            _dockDragStart = e.GetPosition(this);
+            _dockDragStart = e.GetPosition(_interactionRoot);
             _dockDragCardId = card.Id;
         }
         else
@@ -426,9 +460,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var position = e.GetPosition(CompositionRoot);
+        var position = e.GetPosition(_interactionRoot);
         if (_internalDragKind == InternalDragKind.None &&
-            HasExceededDragThreshold(e.GetPosition(this)))
+            HasExceededDragThreshold(position))
         {
             BeginInternalDrag(position);
         }
@@ -454,7 +488,7 @@ public partial class MainWindow : Window
         var sourceCardId = _dockDragCardId;
         var sourceFile = _fileDragSource;
         var hasTarget = TryGetDockCardAt(
-            e.GetPosition(CompositionRoot),
+            e.GetPosition(_interactionRoot),
             out _,
             out var targetCard);
         var insertAfter = targetCard?.ShowInsertAfter == true;
@@ -565,7 +599,7 @@ public partial class MainWindow : Window
             !targetCard.IsVirtual &&
             !string.Equals(_dockDragCardId, targetCard.Id, StringComparison.OrdinalIgnoreCase))
         {
-            var targetPosition = CompositionRoot.TranslatePoint(position, targetButton);
+            var targetPosition = _interactionRoot.TranslatePoint(position, targetButton);
             targetCard.SetReorderTarget(targetPosition.X >= targetButton.ActualWidth / 2);
         }
     }
@@ -577,7 +611,7 @@ public partial class MainWindow : Window
     {
         targetButton = null!;
         targetCard = null!;
-        var current = CompositionRoot.InputHitTest(position) as DependencyObject;
+        var current = _interactionRoot.InputHitTest(position) as DependencyObject;
         while (current is not null)
         {
             if (current is Button { DataContext: CardViewModel card } button &&
@@ -639,7 +673,7 @@ public partial class MainWindow : Window
     }
 
     private Point GetItemContextMenuPosition(MouseEventArgs e)
-        => GetItemContextMenuPosition(e.GetPosition(CompositionRoot));
+        => GetItemContextMenuPosition(e.GetPosition(_interactionRoot));
 
     private Point GetItemContextMenuPosition(Point position)
     {
@@ -647,8 +681,8 @@ public partial class MainWindow : Window
         const double menuHeight = 340;
         const double margin = 12;
 
-        var maxLeft = Math.Max(margin, CompositionRoot.ActualWidth - menuWidth - margin);
-        var maxTop = Math.Max(margin, CompositionRoot.ActualHeight - menuHeight - margin);
+        var maxLeft = Math.Max(margin, _interactionRoot.ActualWidth - menuWidth - margin);
+        var maxTop = Math.Max(margin, _interactionRoot.ActualHeight - menuHeight - margin);
         return new Point(
             Math.Clamp(position.X, margin, maxLeft),
             Math.Clamp(position.Y, margin, maxTop));
@@ -656,7 +690,7 @@ public partial class MainWindow : Window
 
     private Point GetElementCenter(FrameworkElement element) => element.TranslatePoint(
         new Point(element.ActualWidth / 2, element.ActualHeight / 2),
-        CompositionRoot);
+        _interactionRoot);
 
     private static NativePoint GetElementCenterOnScreen(FrameworkElement element)
     {
@@ -677,7 +711,7 @@ public partial class MainWindow : Window
 
     private NativePoint GetContextMenuScreenPosition(MouseEventArgs e)
     {
-        var originalClick = PointToScreen(e.GetPosition(this));
+        var originalClick = _interactionRoot.PointToScreen(e.GetPosition(_interactionRoot));
         return new NativePoint(
             (int)Math.Round(originalClick.X, MidpointRounding.AwayFromZero),
             (int)Math.Round(originalClick.Y, MidpointRounding.AwayFromZero));
@@ -759,11 +793,11 @@ public partial class MainWindow : Window
         FileDragPreviewTransform.X = Math.Clamp(
             position.X + offset,
             margin,
-            Math.Max(margin, CompositionRoot.ActualWidth - previewWidth - margin));
+            Math.Max(margin, _interactionRoot.ActualWidth - previewWidth - margin));
         FileDragPreviewTransform.Y = Math.Clamp(
             position.Y + offset,
             margin,
-            Math.Max(margin, CompositionRoot.ActualHeight - previewHeight - margin));
+            Math.Max(margin, _interactionRoot.ActualHeight - previewHeight - margin));
     }
 
     private void HideFileDragPreview()

@@ -13,6 +13,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const string DesktopProgramManagerWindowClass = "Progman";
     private const string DesktopViewWindowClass = "SHELLDLL_DefView";
     private const string DesktopWorkerWindowClass = "WorkerW";
+    private const string WebViewCompositionWindowClass = "Chrome_WidgetWin_0";
     private const int WindowStyleIndex = -16;
     private const int ExtendedWindowStyleIndex = -20;
     private const long ChildWindowStyle = 0x40000000L;
@@ -167,27 +168,76 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             windowTopLeft.Y != 0 ||
             windowBottomRight.X != width ||
             windowBottomRight.Y != height;
-        if (!needsPlacement)
+        if (needsPlacement)
+        {
+            var placementFlags = NoActivate | ShowWindowFlag;
+            if (styleChanged)
+            {
+                placementFlags |= FrameChanged;
+            }
+
+            if (!SetWindowPos(
+                    windowHandle,
+                    0,
+                    0,
+                    0,
+                    width,
+                    height,
+                    placementFlags))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+        }
+
+        NormalizeWebViewCompositionWindow(windowHandle, parentWindowHandle);
+    }
+
+    private static void NormalizeWebViewCompositionWindow(
+        nint windowHandle,
+        nint parentWindowHandle)
+    {
+        _ = GetWindowThreadProcessId(windowHandle, out var applicationProcessId);
+        if (applicationProcessId == 0)
         {
             return;
         }
 
-        var placementFlags = NoActivate | ShowWindowFlag;
-        if (styleChanged)
+        var compositionWindow = FindWindowEx(
+            parentWindowHandle,
+            0,
+            WebViewCompositionWindowClass,
+            null);
+        while (compositionWindow != 0)
         {
-            placementFlags |= FrameChanged;
-        }
+            _ = GetWindowThreadProcessId(compositionWindow, out var processId);
+            if (processId == applicationProcessId)
+            {
+                _ = SetParent(compositionWindow, windowHandle);
+                if (GetParent(compositionWindow) != windowHandle)
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
 
-        if (!SetWindowPos(
-                windowHandle,
-                0,
-                0,
-                0,
-                width,
-                height,
-                placementFlags))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
+                if (!SetWindowPos(
+                        compositionWindow,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        NoActivate | NoZOrder))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                return;
+            }
+
+            compositionWindow = FindWindowEx(
+                parentWindowHandle,
+                compositionWindow,
+                WebViewCompositionWindowClass,
+                null);
         }
     }
 
