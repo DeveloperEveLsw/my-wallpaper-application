@@ -40,6 +40,8 @@ public sealed class WebVisualizerSurface : Grid, IDisposable
 
     public event EventHandler<WebVisualizerFailureEventArgs>? InitializationFailed;
 
+    public event EventHandler? InitializationCompleted;
+
     public void SetLifecycleState(RenderLayerState state)
     {
         _pendingState = state;
@@ -106,7 +108,10 @@ public sealed class WebVisualizerSurface : Grid, IDisposable
         {
             Trace.TraceError($"Web visualizer initialization failed: {exception}");
             InitializationFailed?.Invoke(this, new WebVisualizerFailureEventArgs(exception));
+            return;
         }
+
+        InitializationCompleted?.Invoke(this, EventArgs.Empty);
     }
 
     private async Task InitializeAsync()

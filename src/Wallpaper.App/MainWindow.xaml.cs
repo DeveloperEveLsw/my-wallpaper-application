@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     private InternalDragKind _internalDragKind;
     private bool _inputInteractionActive;
     private bool _isShellContextMenuOpen;
+    private bool _wallpaperHostAttached;
+    private nint _windowHandle;
     private NativePoint? _itemShellMenuScreenPosition;
 
     public MainWindow(
@@ -41,6 +43,8 @@ public partial class MainWindow : Window
         _wallpaperHost = wallpaperHost;
         _visualizerLifecycle = visualizerLifecycle;
         _visualizerLifecycle.AttachSurface(VisualizerSurface);
+        VisualizerSurface.InitializationCompleted += VisualizerSurface_OnInitializationCompleted;
+        VisualizerSurface.InitializationFailed += VisualizerSurface_OnInitializationFailed;
         DataContext = viewModel;
 
         if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
@@ -80,6 +84,8 @@ public partial class MainWindow : Window
             _settingsHoverTimer.Stop();
             _wallpaperHost.StatusChanged -= WallpaperHost_OnStatusChanged;
             _wallpaperHost.ExitRequested -= WallpaperHost_OnExitRequested;
+            VisualizerSurface.InitializationCompleted -= VisualizerSurface_OnInitializationCompleted;
+            VisualizerSurface.InitializationFailed -= VisualizerSurface_OnInitializationFailed;
             _visualizerLifecycle.DetachSurface(VisualizerSurface);
             ViewModel.Dispose();
         };
@@ -89,8 +95,29 @@ public partial class MainWindow : Window
 
     private void MainWindow_OnSourceInitialized(object? sender, EventArgs e)
     {
-        var windowHandle = new WindowInteropHelper(this).Handle;
-        _wallpaperHost.Attach(windowHandle);
+        _windowHandle = new WindowInteropHelper(this).Handle;
+        if (_wallpaperHost.Kind != HostKind.WallpaperEngine)
+        {
+            AttachWallpaperHost();
+        }
+    }
+
+    private void VisualizerSurface_OnInitializationCompleted(object? sender, EventArgs e) =>
+        AttachWallpaperHost();
+
+    private void VisualizerSurface_OnInitializationFailed(
+        object? sender,
+        WebVisualizerFailureEventArgs e) => AttachWallpaperHost();
+
+    private void AttachWallpaperHost()
+    {
+        if (_wallpaperHostAttached || _windowHandle == 0)
+        {
+            return;
+        }
+
+        _wallpaperHost.Attach(_windowHandle);
+        _wallpaperHostAttached = true;
     }
 
     private void WallpaperHost_OnStatusChanged(object? sender, HostStatusChangedEventArgs e)
