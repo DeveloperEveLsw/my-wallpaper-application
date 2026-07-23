@@ -4,8 +4,6 @@ internal interface IWallpaperEngineInterop
 {
     bool IsWindow(nint windowHandle);
 
-    nint GetParentWindow(nint windowHandle);
-
     string? GetWindowProcessName(nint windowHandle);
 
     bool IsWallpaperEngineRunning();
@@ -14,9 +12,7 @@ internal interface IWallpaperEngineInterop
 
     bool IsRenderingVisible(nint windowHandle, nint parentWindowHandle);
 
-    void PlaceInsideParent(nint windowHandle, nint parentWindowHandle);
-
-    void NormalizeRenderChildWindows(nint windowHandle, nint parentWindowHandle);
+    void FitInsideParent(nint windowHandle, nint parentWindowHandle);
 
     void InitializeInteractiveInput(nint parentWindowHandle);
 

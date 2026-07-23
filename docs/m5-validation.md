@@ -71,7 +71,7 @@ Windows PowerShell에서 다음을 실행한다.
 ```powershell
 ./scripts/check.ps1
 $fixture = ./scripts/new-m5-fixture.ps1
-./scripts/run-standalone.ps1 -RootPath $fixture.RootPath -Configuration Release
+./scripts/run-dev-window.ps1 -RootPath $fixture.RootPath -Configuration Release
 ```
 
 ### 항목 메뉴

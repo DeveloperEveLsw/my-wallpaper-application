@@ -9,8 +9,8 @@
 ### Q1. 루트 설정의 최종 소유자
 
 결정: 애플리케이션 설정을 기준으로 사용한다. WPF 네이티브 폴더 선택기가 앱 로컬
-설정을 관리한다. Wallpaper Engine/Lively 속성과 시스템 트레이는 사용하지 않는다.
-호스트를 바꿔도 기본 루트는 유지된다.
+설정을 관리한다. Wallpaper Engine 속성과 시스템 트레이는 사용하지 않는다. 개발 창도
+같은 기본 루트를 사용한다.
 
 ### Q2. 폴더 모달이 표시할 깊이
 
@@ -20,8 +20,8 @@
 ### Q3. 실제 Windows Desktop을 루트로 선택할 때의 아이콘 중복
 
 결정: Wallpaper Engine에서 제공하는 Windows 원본 아이콘 숨김 기능을 사용한다. WPF
-애플리케이션은 Explorer 아이콘 상태를 직접 바꾸거나 복원하지 않는다. Lively와
-Standalone의 운용 정책은 각 호스트 통합 전에 확정한다.
+애플리케이션은 Explorer 아이콘 상태를 직접 바꾸거나 복원하지 않는다. `--dev-window`는
+제품 운용 경로가 아니므로 Explorer 아이콘을 변경하지 않는다.
 
 ### 삭제 확인과 충돌 처리
 
@@ -63,13 +63,14 @@ Standalone의 운용 정책은 각 호스트 통합 전에 확정한다.
 
 ### Q7. 첫 번째 공식 호스트
 
-결정: Standalone으로 WPF 기능을 먼저 검증하고, 첫 공식 호스트는 사용자의 주 사용
-환경인 Wallpaper Engine으로 한다. Lively는 그다음 호환 호스트로 개발한다.
+결정: Wallpaper Engine을 유일한 제품 호스트로 사용한다. 로컬 검증은 별도 호스트인
+Standalone 대신 같은 `WallpaperView`를 일반 창에 담는 명시적 `--dev-window`로 수행한다.
+Lively 호스트는 현재 범위에서 제외한다.
 
 Wallpaper Engine 2.8.42부터 Application Wallpaper의 공개 Workshop 배포는 종료됐지만
 개인 로컬 실행은 계속 가능하다. 이 프로젝트는 개인 로컬 실행만 대상으로 한다.
 
-결정: Wallpaper Engine/Lively 속성 연동과 시스템 트레이를 사용하지 않는다. 루트 변경은
+결정: Wallpaper Engine 속성 연동과 시스템 트레이를 사용하지 않는다. 루트 변경은
 WPF 내부 설정 패널과 네이티브 폴더 선택기로만 수행한다.
 
 ### Q8. 다중 모니터 정책

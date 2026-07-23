@@ -57,11 +57,7 @@ public static class WallpaperEngineWatchdog
                 $"Wallpaper Engine 부모 프로세스가 아닙니다: {engineProcess.ProcessName}");
         }
 
-        var launchOptions = HostLaunchOptions.Resolve(
-            applicationArguments,
-            Environment.GetEnvironmentVariable(HostLaunchOptions.EnvironmentVariableName),
-            engineProcess.ProcessName,
-            AppContext.BaseDirectory);
+        var launchOptions = HostLaunchOptions.Resolve(applicationArguments);
         if (launchOptions.ParentWindowHandle == 0)
         {
             throw new InvalidOperationException("Wallpaper Engine parent HWND를 찾지 못했습니다.");

@@ -1,24 +1,22 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Wallpaper.App.ViewModels;
 using Wallpaper.Core.FileOperations;
-using Wallpaper.Hosts;
 using Wallpaper.Infrastructure.Windows.Shell;
 using Wallpaper.Rendering.WebView;
 
 namespace Wallpaper.App;
 
-public partial class MainWindow : Window
+public partial class WallpaperView : UserControl, IDisposable
 {
     private readonly DispatcherTimer _clockTimer;
     private readonly DispatcherTimer _settingsHoverTimer;
     private readonly IShellContextMenuService _shellContextMenuService;
-    private readonly IWallpaperHost _wallpaperHost;
     private readonly FrameworkElement _interactionRoot;
+    private readonly nint _inputWindowHandle;
     private readonly WebVisualizerRenderLifecycle _visualizerLifecycle;
     private Point _dockDragStart;
     private string? _dockDragCardId;
@@ -28,35 +26,28 @@ public partial class MainWindow : Window
     private InternalDragKind _internalDragKind;
     private bool _inputInteractionActive;
     private bool _isShellContextMenuOpen;
-    private bool _wallpaperHostAttached;
-    private nint _windowHandle;
+    private bool _disposed;
     private NativePoint? _itemShellMenuScreenPosition;
 
-    public MainWindow(
+    public WallpaperView(
         MainViewModel viewModel,
         IShellContextMenuService shellContextMenuService,
-        IWallpaperHost wallpaperHost,
-        WebVisualizerRenderLifecycle visualizerLifecycle)
+        WebVisualizerRenderLifecycle visualizerLifecycle,
+        nint inputWindowHandle)
     {
+        if (inputWindowHandle == 0)
+        {
+            throw new ArgumentException("입력 owner HWND가 필요합니다.", nameof(inputWindowHandle));
+        }
+
         InitializeComponent();
         ViewModel = viewModel;
         _shellContextMenuService = shellContextMenuService;
-        _wallpaperHost = wallpaperHost;
         _visualizerLifecycle = visualizerLifecycle;
+        _inputWindowHandle = inputWindowHandle;
         _visualizerLifecycle.AttachSurface(VisualizerSurface);
-        VisualizerSurface.InitializationCompleted += VisualizerSurface_OnInitializationCompleted;
-        VisualizerSurface.InitializationFailed += VisualizerSurface_OnInitializationFailed;
         DataContext = viewModel;
         _interactionRoot = CompositionRoot;
-
-        if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
-        {
-            WindowState = WindowState.Normal;
-            ResizeMode = ResizeMode.NoResize;
-            ShowActivated = false;
-            ShowInTaskbar = false;
-            Opacity = 0;
-        }
 
         _clockTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -70,90 +61,27 @@ public partial class MainWindow : Window
         };
         _settingsHoverTimer.Tick += SettingsHoverTimer_OnTick;
 
-        SourceInitialized += MainWindow_OnSourceInitialized;
-        _wallpaperHost.StatusChanged += WallpaperHost_OnStatusChanged;
-        _wallpaperHost.ExitRequested += WallpaperHost_OnExitRequested;
-
         Loaded += (_, _) =>
         {
             UpdateClock();
             _clockTimer.Start();
             UpdateDockWidth();
         };
-        Closed += (_, _) =>
-        {
-            _clockTimer.Stop();
-            _settingsHoverTimer.Stop();
-            _wallpaperHost.StatusChanged -= WallpaperHost_OnStatusChanged;
-            _wallpaperHost.ExitRequested -= WallpaperHost_OnExitRequested;
-            VisualizerSurface.InitializationCompleted -= VisualizerSurface_OnInitializationCompleted;
-            VisualizerSurface.InitializationFailed -= VisualizerSurface_OnInitializationFailed;
-            _visualizerLifecycle.DetachSurface(VisualizerSurface);
-            ViewModel.Dispose();
-        };
     }
 
     public MainViewModel ViewModel { get; }
 
-    private void MainWindow_OnSourceInitialized(object? sender, EventArgs e)
+    public void Dispose()
     {
-        _windowHandle = new WindowInteropHelper(this).Handle;
-        if (_wallpaperHost.Kind != HostKind.WallpaperEngine)
+        if (_disposed)
         {
-            AttachWallpaperHost();
-        }
-    }
-
-    private void VisualizerSurface_OnInitializationCompleted(object? sender, EventArgs e)
-    {
-        if (!AttachWallpaperHost())
-        {
-            _wallpaperHost.NotifyRenderSurfaceReady();
-        }
-    }
-
-    private void VisualizerSurface_OnInitializationFailed(
-        object? sender,
-        WebVisualizerFailureEventArgs e) => _ = AttachWallpaperHost();
-
-    private bool AttachWallpaperHost()
-    {
-        if (_wallpaperHostAttached || _windowHandle == 0)
-        {
-            return false;
-        }
-
-        _wallpaperHost.Attach(_windowHandle);
-        _wallpaperHostAttached = true;
-        return true;
-    }
-
-    private void WallpaperHost_OnStatusChanged(object? sender, HostStatusChangedEventArgs e)
-    {
-        if (!Dispatcher.CheckAccess())
-        {
-            _ = Dispatcher.BeginInvoke(() => WallpaperHost_OnStatusChanged(sender, e));
             return;
         }
 
-        ViewModel.UpdateHostStatus(e.Status.DisplayText);
-        if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
-        {
-            Opacity = e.Status.State is HostRuntimeState.Active or HostRuntimeState.Paused
-                ? 1
-                : 0;
-        }
-    }
-
-    private void WallpaperHost_OnExitRequested(object? sender, EventArgs e)
-    {
-        if (!Dispatcher.CheckAccess())
-        {
-            _ = Dispatcher.BeginInvoke(() => WallpaperHost_OnExitRequested(sender, e));
-            return;
-        }
-
-        Application.Current.Shutdown();
+        _disposed = true;
+        _clockTimer.Stop();
+        _settingsHoverTimer.Stop();
+        _visualizerLifecycle.DetachSurface(VisualizerSurface);
     }
 
     private void UpdateClock()
@@ -205,7 +133,7 @@ public partial class MainWindow : Window
         await ShowDesktopContextMenuAsync(screenPosition);
     }
 
-    private async void Window_OnKeyDown(object sender, KeyEventArgs e)
+    private async void View_OnKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
@@ -221,7 +149,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_OnSizeChanged(object sender, SizeChangedEventArgs e) => UpdateDockWidth();
+    private void View_OnSizeChanged(object sender, SizeChangedEventArgs e) => UpdateDockWidth();
 
     private async void FileVisual_OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -239,7 +167,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void Window_OnDpiChanged(object sender, DpiChangedEventArgs e)
+    public async Task ReloadFileVisualsForDpiAsync()
     {
         var reloadTasks = EnumerateVisualDescendants<Image>(_interactionRoot)
             .Select(EnsureFileVisualLoadedAsync);
@@ -418,7 +346,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private async void Window_OnPreviewMouseMove(object sender, MouseEventArgs e)
+    private async void View_OnPreviewMouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed)
         {
@@ -450,7 +378,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private async void Window_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private async void View_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_internalDragKind == InternalDragKind.None)
         {
@@ -495,7 +423,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void Window_OnMouseLeave(object sender, MouseEventArgs e)
+    private async void View_OnMouseLeave(object sender, MouseEventArgs e)
     {
         if (_internalDragKind != InternalDragKind.None)
         {
@@ -749,10 +677,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private nint GetInputWindowHandle()
-        => _windowHandle != 0
-            ? _windowHandle
-            : new WindowInteropHelper(this).Handle;
+    private nint GetInputWindowHandle() => _inputWindowHandle;
 
     private void ShowFileDragPreview(string fileName, Point position)
     {

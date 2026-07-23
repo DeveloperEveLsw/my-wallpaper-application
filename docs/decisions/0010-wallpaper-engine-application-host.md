@@ -1,6 +1,6 @@
 # ADR 0010: Wallpaper Engine Application Wallpaper 호스트 수명주기
 
-- 상태: 채택
+- 상태: 채택, HWND 생성·개발 실행 정책은 ADR 0012로 대체
 - 날짜: 2026-07-22
 
 ## 결정

@@ -7,6 +7,15 @@
 - 배포 형식: 로컬 비공개 Application Wallpaper, self-contained `win-x64`
 - 기준일: 2026-07-23
 
+## 2026-07-24 후속 구조 변경
+
+WebView가 WPF 폴더 UI 위에서 입력을 가로채는 문제를 제거하기 위해 ADR 0012의
+parent-first 프레젠테이션으로 변경했다. 일반 WPF 창을 사후 `SetParent`하는 경로와 WebView2
+내부 HWND 보정을 제거하고, Wallpaper Engine parent 아래에 `HwndSource` child를 처음부터
+생성한다. 자동 테스트와 `--dev-window` 스모크 테스트는 통과했지만 이 절 아래의 기존
+Wallpaper Engine 실기기 판정은 이전 HWND 구조에 대한 기록이다. 새 구조의 실제
+Wallpaper Engine z-order·좌우클릭·pause/reload 검수는 다시 수행해야 한다.
+
 ## 완료 판정
 
 M6의 첫 통합 게이트와 호스트 수명주기를 실제 Wallpaper Engine에서 통과했다. WPF 창은

@@ -13,16 +13,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const string DesktopProgramManagerWindowClass = "Progman";
     private const string DesktopViewWindowClass = "SHELLDLL_DefView";
     private const string DesktopWorkerWindowClass = "WorkerW";
-    private const string WebViewCompositionWindowClass = "Chrome_WidgetWin_0";
-    private const int WindowStyleIndex = -16;
     private const int ExtendedWindowStyleIndex = -20;
-    private const long ChildWindowStyle = 0x40000000L;
-    private const long PopupWindowStyle = unchecked((long)0x80000000L);
-    private const long CaptionWindowStyle = 0x00C00000L;
-    private const long ThickFrameWindowStyle = 0x00040000L;
-    private const long SystemMenuWindowStyle = 0x00080000L;
-    private const long MinimizeBoxWindowStyle = 0x00020000L;
-    private const long MaximizeBoxWindowStyle = 0x00010000L;
     private const long TransparentExtendedWindowStyle = 0x00000020L;
     private const uint NoActivate = 0x0010;
     private const uint FrameChanged = 0x0020;
@@ -43,8 +34,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private bool _interactiveInputConfigured;
 
     public bool IsWindow(nint windowHandle) => NativeIsWindow(windowHandle);
-
-    public nint GetParentWindow(nint windowHandle) => GetParent(windowHandle);
 
     public string? GetWindowProcessName(nint windowHandle)
     {
@@ -108,8 +97,16 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         return result < 0 || cloaked == 0;
     }
 
-    public void PlaceInsideParent(nint windowHandle, nint parentWindowHandle)
+    public void FitInsideParent(nint windowHandle, nint parentWindowHandle)
     {
+        if (!NativeIsWindow(windowHandle) ||
+            !NativeIsWindow(parentWindowHandle) ||
+            GetParent(windowHandle) != parentWindowHandle)
+        {
+            throw new InvalidOperationException(
+                "렌더링 HWND는 생성 시점부터 Wallpaper Engine parent HWND의 자식이어야 합니다.");
+        }
+
         if (!GetClientRect(parentWindowHandle, out var parentClientRect))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -122,136 +119,16 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             return;
         }
 
-        var style = GetWindowLongPtr(windowHandle, WindowStyleIndex).ToInt64();
-        var wallpaperStyle = (style | ChildWindowStyle) &
-            ~(PopupWindowStyle |
-              CaptionWindowStyle |
-              ThickFrameWindowStyle |
-              SystemMenuWindowStyle |
-              MinimizeBoxWindowStyle |
-              MaximizeBoxWindowStyle);
-        var styleChanged = wallpaperStyle != style;
-        if (styleChanged)
-        {
-            _ = SetWindowLongPtr(windowHandle, WindowStyleIndex, new nint(wallpaperStyle));
-        }
-
-        var parentChanged = false;
-        if (GetParent(windowHandle) != parentWindowHandle)
-        {
-            _ = SetParent(windowHandle, parentWindowHandle);
-            if (GetParent(windowHandle) != parentWindowHandle)
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            parentChanged = true;
-        }
-
-        if (!GetWindowRect(windowHandle, out var windowRectangle))
+        if (!SetWindowPos(
+                windowHandle,
+                0,
+                0,
+                0,
+                width,
+                height,
+                NoActivate | NoZOrder | ShowWindowFlag))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        var windowTopLeft = new NativePoint(windowRectangle.Left, windowRectangle.Top);
-        var windowBottomRight = new NativePoint(windowRectangle.Right, windowRectangle.Bottom);
-        if (!ScreenToClient(parentWindowHandle, ref windowTopLeft) ||
-            !ScreenToClient(parentWindowHandle, ref windowBottomRight))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        var needsPlacement = styleChanged ||
-            parentChanged ||
-            !NativeIsWindowVisible(windowHandle) ||
-            windowTopLeft.X != 0 ||
-            windowTopLeft.Y != 0 ||
-            windowBottomRight.X != width ||
-            windowBottomRight.Y != height;
-        if (needsPlacement)
-        {
-            var placementFlags = NoActivate | ShowWindowFlag;
-            if (styleChanged)
-            {
-                placementFlags |= FrameChanged;
-            }
-
-            if (!SetWindowPos(
-                    windowHandle,
-                    0,
-                    0,
-                    0,
-                    width,
-                    height,
-                    placementFlags))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-        }
-    }
-
-    public void NormalizeRenderChildWindows(
-        nint windowHandle,
-        nint parentWindowHandle)
-    {
-        if (!NativeIsWindow(windowHandle) || !NativeIsWindow(parentWindowHandle))
-        {
-            return;
-        }
-
-        _ = GetWindowThreadProcessId(windowHandle, out var applicationProcessId);
-        if (applicationProcessId == 0)
-        {
-            return;
-        }
-
-        var compositionWindows = new List<nint>();
-        var compositionWindow = FindWindowEx(
-            parentWindowHandle,
-            0,
-            WebViewCompositionWindowClass,
-            null);
-        while (compositionWindow != 0)
-        {
-            _ = GetWindowThreadProcessId(compositionWindow, out var processId);
-            if (processId == applicationProcessId)
-            {
-                compositionWindows.Add(compositionWindow);
-            }
-
-            compositionWindow = FindWindowEx(
-                parentWindowHandle,
-                compositionWindow,
-                WebViewCompositionWindowClass,
-                null);
-        }
-
-        foreach (var ownedCompositionWindow in compositionWindows)
-        {
-            _ = SetParent(ownedCompositionWindow, windowHandle);
-            if (GetParent(ownedCompositionWindow) != windowHandle)
-            {
-                Trace.TraceWarning(
-                    "WebView2 composition HWND를 WPF 창에 다시 연결하지 못했습니다.");
-                continue;
-            }
-
-            if (!SetWindowPos(
-                    ownedCompositionWindow,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    NoMove |
-                    NoSize |
-                    NoActivate |
-                    NoZOrder |
-                    AsyncWindowPos))
-            {
-                Trace.TraceWarning(
-                    "WebView2 composition HWND의 레이아웃 갱신을 요청하지 못했습니다.");
-            }
         }
     }
 
@@ -566,9 +443,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         string? className,
         string? windowName);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint SetParent(nint childWindowHandle, nint newParentWindowHandle);
-
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnableWindow(nint windowHandle, bool enable);
@@ -576,12 +450,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowEnabled(nint windowHandle);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ScreenToClient(
-        nint windowHandle,
-        ref NativePoint point);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint windowHandle, out uint processId);
@@ -597,10 +465,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetClientRect(nint windowHandle, out NativeRect rectangle);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetWindowRect(nint windowHandle, out NativeRect rectangle);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int SetWindowRgn(
@@ -642,12 +506,4 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         public int Right;
         public int Bottom;
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativePoint(int x, int y)
-    {
-        public int X = x;
-        public int Y = y;
-    }
-
 }

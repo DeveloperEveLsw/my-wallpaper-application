@@ -2,7 +2,7 @@ using Wallpaper.Rendering.Abstractions;
 
 namespace Wallpaper.Hosts;
 
-public sealed class WallpaperEngineHost : IWallpaperHost
+public sealed class WallpaperEngineHost : IAsyncDisposable
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan HostExitGracePeriod = TimeSpan.FromSeconds(5);
@@ -26,7 +26,7 @@ public sealed class WallpaperEngineHost : IWallpaperHost
 
     public WallpaperEngineHost(
         IWallpaperRenderLifecycle renderLifecycle,
-        nint launchParentWindowHandle = 0)
+        nint launchParentWindowHandle)
         : this(
             renderLifecycle,
             OperatingSystem.IsWindows()
@@ -44,19 +44,20 @@ public sealed class WallpaperEngineHost : IWallpaperHost
         IWallpaperEngineInterop interop,
         TimeProvider timeProvider,
         bool requireWindows,
-        nint launchParentWindowHandle = 0)
+        nint launchParentWindowHandle)
     {
         _renderLifecycle = renderLifecycle ?? throw new ArgumentNullException(nameof(renderLifecycle));
         _interop = interop ?? throw new ArgumentNullException(nameof(interop));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _requireWindows = requireWindows;
-        _launchParentWindowHandle = launchParentWindowHandle;
+        _launchParentWindowHandle = launchParentWindowHandle != 0
+            ? launchParentWindowHandle
+            : throw new ArgumentOutOfRangeException(
+                nameof(launchParentWindowHandle),
+                "Wallpaper Engine parent HWND가 필요합니다.");
     }
 
-    public HostKind Kind => HostKind.WallpaperEngine;
-
     public HostStatusSnapshot Status { get; private set; } = new(
-        HostKind.WallpaperEngine,
         HostRuntimeState.Starting,
         0,
         0,
@@ -88,7 +89,6 @@ public sealed class WallpaperEngineHost : IWallpaperHost
         _windowHandle = windowHandle;
         _synchronizationContext = SynchronizationContext.Current;
         PublishStatus(new HostStatusSnapshot(
-            HostKind.WallpaperEngine,
             HostRuntimeState.WaitingForParent,
             windowHandle,
             0,
@@ -96,27 +96,6 @@ public sealed class WallpaperEngineHost : IWallpaperHost
 
         Poll();
         _timer = new Timer(_ => SchedulePoll(), null, PollInterval, PollInterval);
-    }
-
-    public void NotifyRenderSurfaceReady()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_windowHandle == 0)
-        {
-            return;
-        }
-
-        var parentWindow = Status.ParentWindowHandle;
-        if (parentWindow == 0 ||
-            !_interop.IsWindow(parentWindow) ||
-            _interop.GetParentWindow(_windowHandle) != parentWindow)
-        {
-            return;
-        }
-
-        // WebView2 can recreate its composition HWND after a renderer recovery.
-        // Repair that same-process child only at the matching lifecycle event.
-        _interop.NormalizeRenderChildWindows(_windowHandle, parentWindow);
     }
 
     public async ValueTask DisposeAsync()
@@ -156,7 +135,6 @@ public sealed class WallpaperEngineHost : IWallpaperHost
         {
             _renderLifecycle.Pause();
             PublishStatus(new HostStatusSnapshot(
-                HostKind.WallpaperEngine,
                 HostRuntimeState.Faulted,
                 _windowHandle,
                 0,
@@ -187,7 +165,6 @@ public sealed class WallpaperEngineHost : IWallpaperHost
                 ? HostRuntimeState.Recovering
                 : HostRuntimeState.WaitingForParent;
             PublishStatus(new HostStatusSnapshot(
-                HostKind.WallpaperEngine,
                 state,
                 _windowHandle,
                 0,
@@ -198,13 +175,9 @@ public sealed class WallpaperEngineHost : IWallpaperHost
 
         _hadParent = true;
         _hostMissingSince = null;
-        // Wallpaper Engine may suspend this process while synchronously managing its
-        // child tree. Never mutate the same cross-process HWND hierarchy on every poll.
-        if (_attachedParentWindow != parentWindow ||
-            _interop.GetParentWindow(_windowHandle) != parentWindow)
+        if (_attachedParentWindow != parentWindow)
         {
-            _interop.PlaceInsideParent(_windowHandle, parentWindow);
-            _interop.NormalizeRenderChildWindows(_windowHandle, parentWindow);
+            _interop.FitInsideParent(_windowHandle, parentWindow);
             _interop.InitializeInteractiveInput(parentWindow);
             _attachedParentWindow = parentWindow;
         }
@@ -221,7 +194,6 @@ public sealed class WallpaperEngineHost : IWallpaperHost
         }
 
         PublishStatus(new HostStatusSnapshot(
-            HostKind.WallpaperEngine,
             isVisible ? HostRuntimeState.Active : HostRuntimeState.Paused,
             _windowHandle,
             parentWindow,
@@ -231,13 +203,9 @@ public sealed class WallpaperEngineHost : IWallpaperHost
 
     private nint ResolveParentWindow()
     {
-        if (_launchParentWindowHandle != 0 &&
-            _interop.IsWindow(_launchParentWindowHandle))
-        {
-            return _launchParentWindowHandle;
-        }
-
-        return _interop.GetParentWindow(_windowHandle);
+        return _interop.IsWindow(_launchParentWindowHandle)
+            ? _launchParentWindowHandle
+            : 0;
     }
 
     private void CheckForHostExit()

@@ -22,13 +22,12 @@ public sealed class WallpaperEngineHostTests
         Assert.Equal(HostRuntimeState.Active, host.Status.State);
         Assert.Equal((nint)200, host.Status.ParentWindowHandle);
         Assert.Equal(RenderLayerState.Running, lifecycle.State);
-        Assert.Equal(1, interop.PlacementCount);
-        Assert.Equal(1, interop.RenderChildNormalizationCount);
+        Assert.Equal(1, interop.FitCount);
         Assert.Equal(1, interop.InputInitializationCount);
     }
 
     [Fact]
-    public async Task Attach_UsesLaunchParentBeforeWindowHasBeenReparented()
+    public async Task Attach_ReportsFaultWhenWindowWasNotCreatedUnderLaunchParent()
     {
         var lifecycle = new FakeRenderLifecycle();
         await lifecycle.StartAsync();
@@ -41,9 +40,9 @@ public sealed class WallpaperEngineHostTests
 
         host.Attach(100);
 
-        Assert.Equal(HostRuntimeState.Active, host.Status.State);
-        Assert.Equal((nint)300, host.Status.ParentWindowHandle);
-        Assert.Equal((nint)300, interop.LastPlacementParent);
+        Assert.Equal(HostRuntimeState.Faulted, host.Status.State);
+        Assert.Equal(RenderLayerState.Paused, lifecycle.State);
+        Assert.Equal(0, interop.InputInitializationCount);
     }
 
     [Fact]
@@ -88,13 +87,12 @@ public sealed class WallpaperEngineHostTests
         host.Poll();
         host.Poll();
 
-        Assert.Equal(1, interop.PlacementCount);
-        Assert.Equal(1, interop.RenderChildNormalizationCount);
+        Assert.Equal(1, interop.FitCount);
         Assert.Equal(1, interop.InputInitializationCount);
     }
 
     [Fact]
-    public async Task NotifyRenderSurfaceReady_NormalizesOnlyAtRendererLifecycleEvent()
+    public async Task Poll_RecoversWhenLaunchParentBecomesAvailableAgain()
     {
         var lifecycle = new FakeRenderLifecycle();
         await lifecycle.StartAsync();
@@ -106,40 +104,19 @@ public sealed class WallpaperEngineHostTests
         await using var host = CreateHost(lifecycle, interop);
         host.Attach(100);
 
-        host.NotifyRenderSurfaceReady();
-        host.Poll();
-        host.Poll();
-
-        Assert.Equal(2, interop.RenderChildNormalizationCount);
-        Assert.Equal(1, interop.PlacementCount);
-    }
-
-    [Fact]
-    public async Task Poll_RecoversAfterParentIsRecreated()
-    {
-        var lifecycle = new FakeRenderLifecycle();
-        await lifecycle.StartAsync();
-        var interop = new FakeWallpaperEngineInterop
-        {
-            ParentWindow = 200,
-            RenderingVisible = true,
-        };
-        await using var host = CreateHost(lifecycle, interop);
-        host.Attach(100);
-
-        interop.ParentWindow = 0;
+        interop.MissingWindowHandles.Add(200);
         host.Poll();
 
         Assert.Equal(HostRuntimeState.Recovering, host.Status.State);
         Assert.Equal(RenderLayerState.Paused, lifecycle.State);
 
-        interop.ParentWindow = 300;
+        interop.MissingWindowHandles.Remove(200);
         host.Poll();
 
         Assert.Equal(HostRuntimeState.Active, host.Status.State);
-        Assert.Equal((nint)300, host.Status.ParentWindowHandle);
+        Assert.Equal((nint)200, host.Status.ParentWindowHandle);
         Assert.Equal(RenderLayerState.Running, lifecycle.State);
-        Assert.True(interop.PlacementCount >= 2);
+        Assert.Equal(2, interop.FitCount);
     }
 
     [Fact]
@@ -204,7 +181,7 @@ public sealed class WallpaperEngineHostTests
     private static WallpaperEngineHost CreateHost(
         IWallpaperRenderLifecycle lifecycle,
         IWallpaperEngineInterop interop,
-        nint launchParentWindowHandle = 0) =>
+        nint launchParentWindowHandle = 200) =>
         new(
             lifecycle,
             interop,
@@ -245,19 +222,18 @@ public sealed class WallpaperEngineHostTests
 
         public bool ParentConnectedToDesktop { get; set; } = true;
 
-        public int PlacementCount { get; private set; }
+        public HashSet<nint> MissingWindowHandles { get; } = [];
+
+        public int FitCount { get; private set; }
 
         public int InputInitializationCount { get; private set; }
 
         public int InputRestoreCount { get; private set; }
 
-        public int RenderChildNormalizationCount { get; private set; }
-
-        public nint LastPlacementParent { get; private set; }
-
-        public bool IsWindow(nint windowHandle) => WindowExists && windowHandle != 0;
-
-        public nint GetParentWindow(nint windowHandle) => ParentWindow;
+        public bool IsWindow(nint windowHandle) =>
+            WindowExists &&
+            windowHandle != 0 &&
+            !MissingWindowHandles.Contains(windowHandle);
 
         public string? GetWindowProcessName(nint windowHandle) => "wallpaper64";
 
@@ -269,16 +245,16 @@ public sealed class WallpaperEngineHostTests
         public bool IsRenderingVisible(nint windowHandle, nint parentWindowHandle) =>
             RenderingVisible;
 
-        public void PlaceInsideParent(nint windowHandle, nint parentWindowHandle)
+        public void FitInsideParent(nint windowHandle, nint parentWindowHandle)
         {
-            PlacementCount++;
-            LastPlacementParent = parentWindowHandle;
-            ParentWindow = parentWindowHandle;
-        }
+            if (ParentWindow != parentWindowHandle)
+            {
+                throw new InvalidOperationException(
+                    "Window was not created under the launch parent.");
+            }
 
-        public void NormalizeRenderChildWindows(
-            nint windowHandle,
-            nint parentWindowHandle) => RenderChildNormalizationCount++;
+            FitCount++;
+        }
 
         public void InitializeInteractiveInput(nint parentWindowHandle) =>
             InputInitializationCount++;

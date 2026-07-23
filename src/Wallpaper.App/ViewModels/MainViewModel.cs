@@ -81,7 +81,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _isNotificationOpen;
     private string _notificationText = string.Empty;
     private bool _notificationIsError;
-    private string _hostStatus = "Standalone · Starting";
+    private string _hostStatus = "Wallpaper Engine · Starting";
     private bool _disposed;
 
     public MainViewModel(

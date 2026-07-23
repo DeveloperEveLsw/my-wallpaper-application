@@ -14,7 +14,7 @@ Push-Location $repoRoot
 
 try {
     if (-not [string]::IsNullOrWhiteSpace($RootPath)) {
-        $settingsDirectory = Join-Path $env:TEMP "wallpaper-standalone-$([Guid]::NewGuid().ToString('N'))"
+        $settingsDirectory = Join-Path $env:TEMP "wallpaper-dev-$([Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $settingsDirectory -Force | Out-Null
         @{
             schemaVersion = 1
@@ -24,7 +24,11 @@ try {
         $env:WALLPAPER_SETTINGS_DIRECTORY = $settingsDirectory
     }
 
-    & $dotnet run --project src/Wallpaper.App/Wallpaper.App.csproj --configuration $Configuration
+    & $dotnet run `
+        --project src/Wallpaper.App/Wallpaper.App.csproj `
+        --configuration $Configuration `
+        -- `
+        --dev-window
     if ($LASTEXITCODE -ne 0) { throw "dotnet run failed with exit code $LASTEXITCODE" }
 }
 finally {
