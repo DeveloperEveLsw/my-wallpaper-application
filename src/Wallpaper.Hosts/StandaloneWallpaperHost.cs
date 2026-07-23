@@ -35,6 +35,10 @@ public sealed class StandaloneWallpaperHost : IWallpaperHost
         StatusChanged?.Invoke(this, new HostStatusChangedEventArgs(Status));
     }
 
+    public void NotifyRenderSurfaceReady()
+    {
+    }
+
     public ValueTask DisposeAsync()
     {
         Status = Status with

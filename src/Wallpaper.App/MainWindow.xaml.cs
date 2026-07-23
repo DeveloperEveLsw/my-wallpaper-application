@@ -104,22 +104,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private void VisualizerSurface_OnInitializationCompleted(object? sender, EventArgs e) =>
-        AttachWallpaperHost();
+    private void VisualizerSurface_OnInitializationCompleted(object? sender, EventArgs e)
+    {
+        if (!AttachWallpaperHost())
+        {
+            _wallpaperHost.NotifyRenderSurfaceReady();
+        }
+    }
 
     private void VisualizerSurface_OnInitializationFailed(
         object? sender,
-        WebVisualizerFailureEventArgs e) => AttachWallpaperHost();
+        WebVisualizerFailureEventArgs e) => _ = AttachWallpaperHost();
 
-    private void AttachWallpaperHost()
+    private bool AttachWallpaperHost()
     {
         if (_wallpaperHostAttached || _windowHandle == 0)
         {
-            return;
+            return false;
         }
 
         _wallpaperHost.Attach(_windowHandle);
         _wallpaperHostAttached = true;
+        return true;
     }
 
     private void WallpaperHost_OnStatusChanged(object? sender, HostStatusChangedEventArgs e)

@@ -98,6 +98,27 @@ public sealed class WallpaperEngineHost : IWallpaperHost
         _timer = new Timer(_ => SchedulePoll(), null, PollInterval, PollInterval);
     }
 
+    public void NotifyRenderSurfaceReady()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_windowHandle == 0)
+        {
+            return;
+        }
+
+        var parentWindow = Status.ParentWindowHandle;
+        if (parentWindow == 0 ||
+            !_interop.IsWindow(parentWindow) ||
+            _interop.GetParentWindow(_windowHandle) != parentWindow)
+        {
+            return;
+        }
+
+        // WebView2 can recreate its composition HWND after a renderer recovery.
+        // Repair that same-process child only at the matching lifecycle event.
+        _interop.NormalizeRenderChildWindows(_windowHandle, parentWindow);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -183,6 +204,7 @@ public sealed class WallpaperEngineHost : IWallpaperHost
             _interop.GetParentWindow(_windowHandle) != parentWindow)
         {
             _interop.PlaceInsideParent(_windowHandle, parentWindow);
+            _interop.NormalizeRenderChildWindows(_windowHandle, parentWindow);
             _interop.InitializeInteractiveInput(parentWindow);
             _attachedParentWindow = parentWindow;
         }

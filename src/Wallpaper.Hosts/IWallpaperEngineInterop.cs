@@ -16,6 +16,8 @@ internal interface IWallpaperEngineInterop
 
     void PlaceInsideParent(nint windowHandle, nint parentWindowHandle);
 
+    void NormalizeRenderChildWindows(nint windowHandle, nint parentWindowHandle);
+
     void InitializeInteractiveInput(nint parentWindowHandle);
 
     void RestoreInteractiveInput();

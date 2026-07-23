@@ -11,4 +11,6 @@ public interface IWallpaperHost : IAsyncDisposable
     event EventHandler? ExitRequested;
 
     void Attach(nint windowHandle);
+
+    void NotifyRenderSurfaceReady();
 }

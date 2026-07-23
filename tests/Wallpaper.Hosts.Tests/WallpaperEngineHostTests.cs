@@ -23,6 +23,7 @@ public sealed class WallpaperEngineHostTests
         Assert.Equal((nint)200, host.Status.ParentWindowHandle);
         Assert.Equal(RenderLayerState.Running, lifecycle.State);
         Assert.Equal(1, interop.PlacementCount);
+        Assert.Equal(1, interop.RenderChildNormalizationCount);
         Assert.Equal(1, interop.InputInitializationCount);
     }
 
@@ -88,7 +89,29 @@ public sealed class WallpaperEngineHostTests
         host.Poll();
 
         Assert.Equal(1, interop.PlacementCount);
+        Assert.Equal(1, interop.RenderChildNormalizationCount);
         Assert.Equal(1, interop.InputInitializationCount);
+    }
+
+    [Fact]
+    public async Task NotifyRenderSurfaceReady_NormalizesOnlyAtRendererLifecycleEvent()
+    {
+        var lifecycle = new FakeRenderLifecycle();
+        await lifecycle.StartAsync();
+        var interop = new FakeWallpaperEngineInterop
+        {
+            ParentWindow = 200,
+            RenderingVisible = true,
+        };
+        await using var host = CreateHost(lifecycle, interop);
+        host.Attach(100);
+
+        host.NotifyRenderSurfaceReady();
+        host.Poll();
+        host.Poll();
+
+        Assert.Equal(2, interop.RenderChildNormalizationCount);
+        Assert.Equal(1, interop.PlacementCount);
     }
 
     [Fact]
@@ -228,6 +251,8 @@ public sealed class WallpaperEngineHostTests
 
         public int InputRestoreCount { get; private set; }
 
+        public int RenderChildNormalizationCount { get; private set; }
+
         public nint LastPlacementParent { get; private set; }
 
         public bool IsWindow(nint windowHandle) => WindowExists && windowHandle != 0;
@@ -250,6 +275,10 @@ public sealed class WallpaperEngineHostTests
             LastPlacementParent = parentWindowHandle;
             ParentWindow = parentWindowHandle;
         }
+
+        public void NormalizeRenderChildWindows(
+            nint windowHandle,
+            nint parentWindowHandle) => RenderChildNormalizationCount++;
 
         public void InitializeInteractiveInput(nint parentWindowHandle) =>
             InputInitializationCount++;

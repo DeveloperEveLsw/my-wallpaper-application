@@ -13,6 +13,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const string DesktopProgramManagerWindowClass = "Progman";
     private const string DesktopViewWindowClass = "SHELLDLL_DefView";
     private const string DesktopWorkerWindowClass = "WorkerW";
+    private const string WebViewCompositionWindowClass = "Chrome_WidgetWin_0";
     private const int WindowStyleIndex = -16;
     private const int ExtendedWindowStyleIndex = -20;
     private const long ChildWindowStyle = 0x40000000L;
@@ -28,6 +29,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const uint ShowWindowFlag = 0x0040;
     private const uint NoMove = 0x0002;
     private const uint NoSize = 0x0001;
+    private const uint NoZOrder = 0x0004;
     private const uint NoOwnerZOrder = 0x0200;
     private const uint AsyncWindowPos = 0x4000;
     private const uint DwmWindowAttributeCloaked = 14;
@@ -186,7 +188,71 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             }
         }
+    }
 
+    public void NormalizeRenderChildWindows(
+        nint windowHandle,
+        nint parentWindowHandle)
+    {
+        if (!NativeIsWindow(windowHandle) || !NativeIsWindow(parentWindowHandle))
+        {
+            return;
+        }
+
+        _ = GetWindowThreadProcessId(windowHandle, out var applicationProcessId);
+        if (applicationProcessId == 0)
+        {
+            return;
+        }
+
+        var compositionWindows = new List<nint>();
+        var compositionWindow = FindWindowEx(
+            parentWindowHandle,
+            0,
+            WebViewCompositionWindowClass,
+            null);
+        while (compositionWindow != 0)
+        {
+            _ = GetWindowThreadProcessId(compositionWindow, out var processId);
+            if (processId == applicationProcessId)
+            {
+                compositionWindows.Add(compositionWindow);
+            }
+
+            compositionWindow = FindWindowEx(
+                parentWindowHandle,
+                compositionWindow,
+                WebViewCompositionWindowClass,
+                null);
+        }
+
+        foreach (var ownedCompositionWindow in compositionWindows)
+        {
+            _ = SetParent(ownedCompositionWindow, windowHandle);
+            if (GetParent(ownedCompositionWindow) != windowHandle)
+            {
+                Trace.TraceWarning(
+                    "WebView2 composition HWND를 WPF 창에 다시 연결하지 못했습니다.");
+                continue;
+            }
+
+            if (!SetWindowPos(
+                    ownedCompositionWindow,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    NoMove |
+                    NoSize |
+                    NoActivate |
+                    NoZOrder |
+                    AsyncWindowPos))
+            {
+                Trace.TraceWarning(
+                    "WebView2 composition HWND의 레이아웃 갱신을 요청하지 못했습니다.");
+            }
+        }
     }
 
     public void InitializeInteractiveInput(nint parentWindowHandle)

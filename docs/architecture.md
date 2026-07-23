@@ -139,10 +139,12 @@ Wallpaper Engine이 생성한 WorkerW는 기본적으로 disabled 및 `WS_EX_TRA
 제거한다. 이후 직렬 host poll은 parent 연결과 표시 상태만 읽으며 WorkerW 또는 child
 HWND를 반복 변경하지 않는다. 월페이퍼 프로세스에는 시스템 전역 저수준 마우스 hook을
 설치하지 않는다. Wallpaper Engine parent 아래에는 WPF HWND 하나만 두고,
-`WebView2CompositionControl`의 내부 `Chrome_WidgetWin_0`이나 별도 UI overlay HWND를
-재부모화하지 않는다. WorkerW는 여러 모니터의 wallpaper child가 공유하므로 window
-region으로 자르지 않는다. dispose와 종료 watchdog은 다른 활성 wallpaper child가 없을
-때만 WorkerW 입력 상태와 Desktop z-order를 복원한다.
+별도 UI overlay HWND를 만들지 않는다. WPF HWND가 Wallpaper Engine parent로 이동할 때
+그 아래에 남는 앱 소유 `Chrome_WidgetWin_0`만 WPF HWND로 되돌린다. 이 보정은 최초 attach와
+WebView2 renderer 재생성 완료 시점에만 수행하고 host poll에서는 반복하지 않는다. WorkerW는
+여러 모니터의 wallpaper child가 공유하므로 window region으로 자르지 않는다. dispose와
+종료 watchdog은 다른 활성 wallpaper child가 없을 때만 WorkerW 입력 상태와 Desktop
+z-order를 복원한다.
 
 parent가 보이지 않으면 렌더 수명을 pause하고, parent 또는 Desktop WorkerW 연결이
 사라지면 `Recovering` 상태로 전환한다. 일반 reload는 해당 package의 정확한 앱 경로만
