@@ -11,6 +11,7 @@ public sealed class CardViewModel(
     private bool _showInsertAfter;
     private bool _isFileDropTargetValid;
     private bool _isFileDropTargetInvalid;
+    private bool _isOpen;
 
     public string Id { get; } = id;
 
@@ -21,6 +22,12 @@ public sealed class CardViewModel(
     public bool IsVirtual { get; } = isVirtual;
 
     public IReadOnlyList<FileTileViewModel> Files { get; } = files;
+
+    public bool IsOpen
+    {
+        get => _isOpen;
+        private set => SetProperty(ref _isOpen, value);
+    }
 
     public bool ShowInsertBefore
     {
@@ -69,4 +76,6 @@ public sealed class CardViewModel(
         IsFileDropTargetValid = false;
         IsFileDropTargetInvalid = false;
     }
+
+    public void SetOpen(bool isOpen) => IsOpen = isOpen;
 }

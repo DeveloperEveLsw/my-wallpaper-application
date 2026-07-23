@@ -58,13 +58,99 @@
             </Setter>
         </Style>
 
-        <Style x:Key="CardButtonStyle" TargetType="Button" BasedOn="{StaticResource GlassButtonStyle}">
+        <Style x:Key="CardButtonStyle" TargetType="Button">
             <Setter Property="Width" Value="88" />
             <Setter Property="Height" Value="106" />
             <Setter Property="Padding" Value="8" />
             <Setter Property="Margin" Value="4,0" />
-            <Setter Property="Background" Value="#08FFFFFF" />
+            <Setter Property="Foreground" Value="#F7F9FF" />
+            <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Padding="{TemplateBinding Padding}"
+                                Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.42" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="OpenCardIndicatorStyle" TargetType="Border">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="5" />
+            <Setter Property="Margin" Value="0,7,0,0" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Background" Value="#EAB8D9FF" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="0.35" />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOpen}" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 From="0"
+                                                 To="1"
+                                                 Duration="0:0:0.2">
+                                    <DoubleAnimation.EasingFunction>
+                                        <QuadraticEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                 From="0.35"
+                                                 To="1"
+                                                 Duration="0:0:0.2">
+                                    <DoubleAnimation.EasingFunction>
+                                        <QuadraticEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 To="0"
+                                                 Duration="0:0:0.14">
+                                    <DoubleAnimation.EasingFunction>
+                                        <QuadraticEase EasingMode="EaseIn" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                 To="0.35"
+                                                 Duration="0:0:0.14">
+                                    <DoubleAnimation.EasingFunction>
+                                        <QuadraticEase EasingMode="EaseIn" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="PanelTitleStyle" TargetType="TextBlock">
@@ -135,7 +221,7 @@
 
             <Border Width="760"
                     Height="470"
-                    Margin="28,28,28,170"
+                    Margin="28,28,28,206"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Bottom"
                     Padding="22"
@@ -300,7 +386,7 @@
             </Border>
 
             <Border x:Name="DockContainer"
-                    Margin="20,0,20,28"
+                    Margin="20,0,20,64"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Bottom"
                     Padding="12,10"
@@ -356,6 +442,7 @@
                                                                Text="{Binding Name}"
                                                                TextAlignment="Center"
                                                                TextTrimming="CharacterEllipsis" />
+                                                    <Border Style="{StaticResource OpenCardIndicatorStyle}" />
                                                 </StackPanel>
                                                 <Border x:Name="ValidFileDropIndicator"
                                                         Padding="6"
@@ -474,6 +561,7 @@
                                            HorizontalAlignment="Center"
                                            FontSize="12"
                                            Text="…" />
+                                <Border Style="{StaticResource OpenCardIndicatorStyle}" />
                             </StackPanel>
                             <Border Padding="6"
                                     Background="#D0357555"

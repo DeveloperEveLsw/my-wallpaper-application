@@ -925,6 +925,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void ShowCard(CardViewModel card)
     {
         _openCardId = card.Id;
+        SetOpenCard(card);
         ModalTitle = card.IsVirtual ? "루트 파일" : card.Name;
         VisibleFileRows.Clear();
 
@@ -950,11 +951,28 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void CloseModal()
     {
         IsModalOpen = false;
+        SetOpenCard(null);
         _openCardId = null;
         _selectedFileId = null;
         VisibleFileRows.Clear();
         HasVisibleFiles = false;
         VisibleFileCountText = string.Empty;
+    }
+
+    private void SetOpenCard(CardViewModel? openCard)
+    {
+        foreach (var folderCard in FolderCards)
+        {
+            folderCard.SetOpen(openCard is not null && string.Equals(
+                folderCard.Id,
+                openCard.Id,
+                StringComparison.OrdinalIgnoreCase));
+        }
+
+        RootFilesCard.SetOpen(openCard is not null && string.Equals(
+            RootFilesCard.Id,
+            openCard.Id,
+            StringComparison.OrdinalIgnoreCase));
     }
 
     private void OpenSettings()
