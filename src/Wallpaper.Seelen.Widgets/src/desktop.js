@@ -38,6 +38,7 @@ const errorPanel = document.getElementById("error-panel");
 const errorTitle = document.getElementById("error-title");
 const errorMessage = document.getElementById("error-message");
 const retryButton = document.getElementById("retry-button");
+const errorCloseButton = document.getElementById("error-close");
 const modal = document.getElementById("file-modal");
 const list = document.getElementById("file-list");
 const spacer = document.getElementById("file-list-spacer");
@@ -63,8 +64,10 @@ let desiredRootConfiguration = {
   useDefaultDesktop: true,
 };
 let activeIssue = null;
+let activeIssueKey = null;
 const visualUrls = new Map();
 const issues = new Map();
+const dismissedIssueSignatures = new Map();
 
 await widget.init({
   saveAndRestoreLastRect: false,
@@ -83,6 +86,7 @@ function bindUi() {
   retryButton.addEventListener("click", () => {
     activeIssue?.retry?.();
   });
+  errorCloseButton.addEventListener("click", dismissActiveIssue);
   document.getElementById("modal-close").addEventListener("click", closeModal);
   modal.addEventListener("pointerdown", (event) => {
     if (event.target === modal) {
@@ -267,25 +271,52 @@ function createIssue(priority, title, message, retry) {
   return { message, priority, retry, title };
 }
 
+function issueSignature(issue) {
+  return `${issue.title}\u0000${issue.message}`;
+}
+
 function setIssue(key, issue) {
   if (issue) {
+    const dismissedSignature = dismissedIssueSignatures.get(key);
+    if (dismissedSignature && dismissedSignature !== issueSignature(issue)) {
+      dismissedIssueSignatures.delete(key);
+    }
     issues.set(key, issue);
   } else {
     issues.delete(key);
+    dismissedIssueSignatures.delete(key);
   }
 
-  const nextIssue = [...issues.values()]
-    .sort((left, right) => right.priority - left.priority)[0] ?? null;
-  activeIssue = nextIssue;
-  if (!nextIssue) {
+  renderIssue();
+}
+
+function dismissActiveIssue() {
+  if (!activeIssueKey || !activeIssue) {
+    return;
+  }
+
+  dismissedIssueSignatures.set(activeIssueKey, issueSignature(activeIssue));
+  renderIssue();
+}
+
+function renderIssue() {
+  const nextEntry = [...issues.entries()]
+    .filter(
+      ([key, issue]) =>
+        dismissedIssueSignatures.get(key) !== issueSignature(issue),
+    )
+    .sort((left, right) => right[1].priority - left[1].priority)[0] ?? null;
+  activeIssueKey = nextEntry?.[0] ?? null;
+  activeIssue = nextEntry?.[1] ?? null;
+  if (!activeIssue) {
     errorPanel.hidden = true;
     rerouteLastCursor();
     return;
   }
 
-  errorTitle.textContent = nextIssue.title;
-  errorMessage.textContent = nextIssue.message;
-  retryButton.hidden = typeof nextIssue.retry !== "function";
+  errorTitle.textContent = activeIssue.title;
+  errorMessage.textContent = activeIssue.message;
+  retryButton.hidden = typeof activeIssue.retry !== "function";
   errorPanel.hidden = false;
   rerouteLastCursor();
 }

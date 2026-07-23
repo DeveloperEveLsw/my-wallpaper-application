@@ -9,7 +9,16 @@
       <strong id="error-title">Wallpaper 오류</strong>
       <span id="error-message"></span>
     </div>
-    <button id="retry-button" class="glass-button" type="button">재시도</button>
+    <div class="error-actions">
+      <button id="retry-button" class="glass-button" type="button">재시도</button>
+      <button
+        id="error-close"
+        class="glass-button icon-button"
+        type="button"
+        aria-label="경고 닫기"
+        title="닫기"
+      >×</button>
+    </div>
   </aside>
 
   <div id="file-modal" class="modal-layer" hidden>

@@ -171,8 +171,11 @@ h2 {
   line-height: 1.45;
 }
 
-#retry-button {
+.error-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .modal-layer {
