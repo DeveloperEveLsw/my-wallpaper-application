@@ -10,11 +10,6 @@ namespace Wallpaper.Seelen.M0.Companion;
 
 internal sealed class LoopbackServer : IAsyncDisposable
 {
-    private static readonly byte[] IconPng = Convert.FromBase64String(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nksAAAAASUVORK5CYII=");
-    private static readonly byte[] ImagePng = Convert.FromBase64String(
-        "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADElEQVR42mNk+M8AAAICAQB7CY6gAAAAAElFTkSuQmCC");
-
     private LoopbackServer(WebApplication application, int port)
     {
         Application = application;
@@ -201,8 +196,8 @@ internal sealed class LoopbackServer : IAsyncDisposable
                 var kind = (string?)context.Request.RouteValues["kind"];
                 var bytes = kind switch
                 {
-                    "icon" => IconPng,
-                    "image" => ImagePng,
+                    "icon" => PngTestAssets.Icon,
+                    "image" => PngTestAssets.Image,
                     _ => null,
                 };
 

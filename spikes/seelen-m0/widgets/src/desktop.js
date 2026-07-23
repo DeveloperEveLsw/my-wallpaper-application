@@ -7,6 +7,8 @@ const PROTOCOL_VERSION = 1;
 const MAX_BLOB_BYTES = 1024 * 1024;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+class TerminalValidationError extends Error {}
+
 const widget = Widget.self;
 const root = document.getElementById("m0-desktop");
 const elements = {
@@ -79,7 +81,7 @@ async function reconnect(reason) {
 
   try {
     if (window.location.origin !== EXPECTED_ORIGIN) {
-      throw new Error(
+      throw new TerminalValidationError(
         `Origin 불일치: 실제 ${window.location.origin}, 허용 ${EXPECTED_ORIGIN}`,
       );
     }
@@ -108,7 +110,9 @@ async function reconnect(reason) {
         elevated: false,
       });
     } catch {
-      throw new Error("Seelen Run 권한이 거부되었거나 Companion 실행에 실패했습니다.");
+      throw new TerminalValidationError(
+        "Seelen Run 권한이 거부되었거나 Companion 실행에 실패했습니다.",
+      );
     }
 
     setStatus("pending", "Companion 증명 대기");
@@ -146,7 +150,7 @@ async function reconnect(reason) {
     setStatus("error", "연결 실패");
     setLog(message);
 
-    if (!message.includes("Run") && !message.includes("Origin 불일치")) {
+    if (!(error instanceof TerminalValidationError)) {
       reconnectTimer = setTimeout(() => void reconnect("자동 재연결"), 2500);
     }
   }
@@ -294,15 +298,24 @@ function openAuthenticatedSocket(port, nonce, generation) {
 }
 
 function validateHello(hello, port) {
+  let sessionTokenBytes = null;
+  try {
+    if (typeof hello?.sessionToken === "string") {
+      sessionTokenBytes = decodeBase64Url(hello.sessionToken);
+    }
+  } catch {
+    // The common validation failure below produces the stable user-facing error.
+  }
+
   if (
     hello?.type !== "helloAck" ||
     hello.protocol !== PROTOCOL_VERSION ||
-    decodeBase64Url(hello.sessionToken).length !== 32 ||
+    sessionTokenBytes?.length !== 32 ||
     hello.httpBaseUrl !== `http://127.0.0.1:${port}` ||
     typeof hello.desktopRoot !== "string" ||
     !/^[A-Za-z]:\\/.test(hello.desktopRoot)
   ) {
-    throw new Error("Companion helloAck 형식이 올바르지 않습니다.");
+    throw new TerminalValidationError("Companion helloAck 형식이 올바르지 않습니다.");
   }
 }
 
@@ -329,7 +342,7 @@ async function validateBlobResponses(httpBaseUrl, token, generation) {
       contentLength < PNG_SIGNATURE.length ||
       contentLength > MAX_BLOB_BYTES
     ) {
-      throw new Error(`${kind} HTTP 응답 메타데이터 검증 실패.`);
+      throw new TerminalValidationError(`${kind} HTTP 응답 메타데이터 검증 실패.`);
     }
 
     const bytes = new Uint8Array(await response.arrayBuffer());
@@ -337,13 +350,24 @@ async function validateBlobResponses(httpBaseUrl, token, generation) {
       bytes.length !== contentLength ||
       !PNG_SIGNATURE.every((value, index) => bytes[index] === value)
     ) {
-      throw new Error(`${kind} Blob 본문 검증 실패.`);
+      throw new TerminalValidationError(`${kind} Blob 본문 검증 실패.`);
     }
 
     const blobUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
     objectUrls.push(blobUrl);
     image.src = blobUrl;
-    await image.decode();
+    try {
+      await image.decode();
+    } catch {
+      throw new TerminalValidationError(
+        `${kind} PNG를 WebView2가 디코딩하지 못했습니다.`,
+      );
+    }
+    if (image.naturalWidth < 1 || image.naturalHeight < 1) {
+      throw new TerminalValidationError(
+        `${kind} PNG의 디코딩된 크기가 올바르지 않습니다.`,
+      );
+    }
   }
 }
 

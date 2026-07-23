@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>Wallpaper.Seelen.M0.Companion</AssemblyName>
     <RootNamespace>Wallpaper.Seelen.M0.Companion</RootNamespace>
