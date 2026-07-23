@@ -135,13 +135,14 @@ Explorer Progman
 
 Wallpaper Engine이 생성한 WorkerW는 기본적으로 disabled 및 `WS_EX_TRANSPARENT`일 수 있다.
 이 경우 WPF가 화면에 보여도 클릭은 Explorer Desktop으로 전달된다. 실행 중인 월페이퍼
-프로세스의 직렬 host poll이 검증된 HWND와 포인터 위치를 관찰하고, 포인터가 전달된 parent의
-화면 rect 안에 있을 때만 WorkerW를 활성화하고 투과 style을 제거한다. 월페이퍼 프로세스에는
-시스템 전역 저수준 마우스 hook을 설치하지 않는다. 프로세스가 suspend되면 poll도 함께
-멈추므로 비-suspend 프로세스가 Wallpaper Engine 소유 WorkerW를 변경해 suspend된 child와
-교차 프로세스 대기를 만드는 일이 없다. WorkerW는 여러 모니터의 wallpaper child가
-공유하므로 window region으로 자르지 않는다. dispose와 종료 watchdog은 WorkerW 비활성화,
-투과 style, 무영역 상태와 Desktop z-order를 복원한다.
+프로세스는 검증된 계층에서 parent attach 시 WorkerW를 한 번 활성화하고 투과 style을
+제거한다. 이후 직렬 host poll은 parent 연결과 표시 상태만 읽으며 WorkerW 또는 child
+HWND를 반복 변경하지 않는다. 월페이퍼 프로세스에는 시스템 전역 저수준 마우스 hook을
+설치하지 않는다. Wallpaper Engine parent 아래에는 WPF HWND 하나만 두고,
+`WebView2CompositionControl`의 내부 `Chrome_WidgetWin_0`이나 별도 UI overlay HWND를
+재부모화하지 않는다. WorkerW는 여러 모니터의 wallpaper child가 공유하므로 window
+region으로 자르지 않는다. dispose와 종료 watchdog은 다른 활성 wallpaper child가 없을
+때만 WorkerW 입력 상태와 Desktop z-order를 복원한다.
 
 parent가 보이지 않으면 렌더 수명을 pause하고, parent 또는 Desktop WorkerW 연결이
 사라지면 `Recovering` 상태로 전환한다. 일반 reload는 해당 package의 정확한 앱 경로만

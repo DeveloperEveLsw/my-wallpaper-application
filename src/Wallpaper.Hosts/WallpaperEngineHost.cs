@@ -16,10 +16,12 @@ public sealed class WallpaperEngineHost : IWallpaperHost
     private Timer? _timer;
     private SynchronizationContext? _synchronizationContext;
     private nint _windowHandle;
+    private nint _attachedParentWindow;
     private DateTimeOffset? _hostMissingSince;
     private bool _hadParent;
     private bool _exitRequested;
     private bool _disposed;
+    private int _pollQueued;
     private int _polling;
 
     public WallpaperEngineHost(
@@ -93,7 +95,7 @@ public sealed class WallpaperEngineHost : IWallpaperHost
             "Waiting for parent HWND"));
 
         Poll();
-        _timer = new Timer(_ => Poll(), null, PollInterval, PollInterval);
+        _timer = new Timer(_ => SchedulePoll(), null, PollInterval, PollInterval);
     }
 
     public async ValueTask DisposeAsync()
@@ -158,6 +160,7 @@ public sealed class WallpaperEngineHost : IWallpaperHost
             !_interop.IsWindow(parentWindow) ||
             !_interop.IsParentConnectedToDesktop(parentWindow))
         {
+            _attachedParentWindow = 0;
             _renderLifecycle.Pause();
             var state = _hadParent
                 ? HostRuntimeState.Recovering
@@ -174,8 +177,15 @@ public sealed class WallpaperEngineHost : IWallpaperHost
 
         _hadParent = true;
         _hostMissingSince = null;
-        _interop.PlaceInsideParent(_windowHandle, parentWindow);
-        _interop.EnsureInteractiveInput(parentWindow);
+        // Wallpaper Engine may suspend this process while synchronously managing its
+        // child tree. Never mutate the same cross-process HWND hierarchy on every poll.
+        if (_attachedParentWindow != parentWindow ||
+            _interop.GetParentWindow(_windowHandle) != parentWindow)
+        {
+            _interop.PlaceInsideParent(_windowHandle, parentWindow);
+            _interop.InitializeInteractiveInput(parentWindow);
+            _attachedParentWindow = parentWindow;
+        }
 
         var parentProcessName = _interop.GetWindowProcessName(parentWindow) ?? "unknown";
         var isVisible = _interop.IsRenderingVisible(_windowHandle, parentWindow);
@@ -233,6 +243,24 @@ public sealed class WallpaperEngineHost : IWallpaperHost
 
         _exitRequested = true;
         PostToOwner(() => ExitRequested?.Invoke(this, EventArgs.Empty));
+    }
+
+    private void SchedulePoll()
+    {
+        if (_disposed ||
+            _windowHandle == 0 ||
+            Interlocked.Exchange(ref _pollQueued, 1) != 0)
+        {
+            return;
+        }
+
+        // Native HWND work must stay on the thread that owns the WPF window. The
+        // interlocked gate also coalesces timer ticks while that thread is suspended.
+        PostToOwner(() =>
+        {
+            Volatile.Write(ref _pollQueued, 0);
+            Poll();
+        });
     }
 
     private void PublishStatus(HostStatusSnapshot status)

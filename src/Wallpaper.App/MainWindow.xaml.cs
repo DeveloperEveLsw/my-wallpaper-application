@@ -19,7 +19,6 @@ public partial class MainWindow : Window
     private readonly IShellContextMenuService _shellContextMenuService;
     private readonly IWallpaperHost _wallpaperHost;
     private readonly FrameworkElement _interactionRoot;
-    private readonly WallpaperOverlayPresenter? _wallpaperOverlayPresenter;
     private readonly WebVisualizerRenderLifecycle _visualizerLifecycle;
     private Point _dockDragStart;
     private string? _dockDragCardId;
@@ -52,14 +51,6 @@ public partial class MainWindow : Window
 
         if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
         {
-            _wallpaperOverlayPresenter = new WallpaperOverlayPresenter(
-                CompositionRoot,
-                VisualizerLayer);
-            _interactionRoot = _wallpaperOverlayPresenter.Root;
-            _interactionRoot.KeyDown += Window_OnKeyDown;
-            _interactionRoot.MouseLeave += Window_OnMouseLeave;
-            _interactionRoot.PreviewMouseLeftButtonUp += Window_OnPreviewMouseLeftButtonUp;
-            _interactionRoot.PreviewMouseMove += Window_OnPreviewMouseMove;
             WindowState = WindowState.Normal;
             ResizeMode = ResizeMode.NoResize;
             ShowActivated = false;
@@ -97,15 +88,6 @@ public partial class MainWindow : Window
             _wallpaperHost.ExitRequested -= WallpaperHost_OnExitRequested;
             VisualizerSurface.InitializationCompleted -= VisualizerSurface_OnInitializationCompleted;
             VisualizerSurface.InitializationFailed -= VisualizerSurface_OnInitializationFailed;
-            if (_wallpaperOverlayPresenter is not null)
-            {
-                _interactionRoot.KeyDown -= Window_OnKeyDown;
-                _interactionRoot.MouseLeave -= Window_OnMouseLeave;
-                _interactionRoot.PreviewMouseLeftButtonUp -= Window_OnPreviewMouseLeftButtonUp;
-                _interactionRoot.PreviewMouseMove -= Window_OnPreviewMouseMove;
-                _wallpaperOverlayPresenter.Dispose();
-            }
-
             _visualizerLifecycle.DetachSurface(VisualizerSurface);
             ViewModel.Dispose();
         };
@@ -151,19 +133,9 @@ public partial class MainWindow : Window
         ViewModel.UpdateHostStatus(e.Status.DisplayText);
         if (_wallpaperHost.Kind == HostKind.WallpaperEngine)
         {
-            var isVisible = e.Status.State is HostRuntimeState.Active or HostRuntimeState.Paused;
-            Opacity = isVisible ? 1 : 0;
-            if (isVisible)
-            {
-                _wallpaperOverlayPresenter?.Show(
-                    e.Status.ParentWindowHandle,
-                    ActualWidth,
-                    ActualHeight);
-            }
-            else
-            {
-                _wallpaperOverlayPresenter?.Hide();
-            }
+            Opacity = e.Status.State is HostRuntimeState.Active or HostRuntimeState.Paused
+                ? 1
+                : 0;
         }
     }
 
@@ -243,11 +215,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_OnSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        UpdateDockWidth();
-        _wallpaperOverlayPresenter?.Resize(ActualWidth, ActualHeight);
-    }
+    private void Window_OnSizeChanged(object sender, SizeChangedEventArgs e) => UpdateDockWidth();
 
     private async void FileVisual_OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -776,12 +744,9 @@ public partial class MainWindow : Window
     }
 
     private nint GetInputWindowHandle()
-    {
-        var overlayWindow = _wallpaperOverlayPresenter?.WindowHandle ?? 0;
-        return overlayWindow != 0
-            ? overlayWindow
+        => _windowHandle != 0
+            ? _windowHandle
             : new WindowInteropHelper(this).Handle;
-    }
 
     private void ShowFileDragPreview(string fileName, Point position)
     {

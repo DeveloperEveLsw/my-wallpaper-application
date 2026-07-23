@@ -23,7 +23,7 @@ public sealed class WallpaperEngineHostTests
         Assert.Equal((nint)200, host.Status.ParentWindowHandle);
         Assert.Equal(RenderLayerState.Running, lifecycle.State);
         Assert.Equal(1, interop.PlacementCount);
-        Assert.Equal(1, interop.InputRoutingCount);
+        Assert.Equal(1, interop.InputInitializationCount);
     }
 
     [Fact]
@@ -69,6 +69,26 @@ public sealed class WallpaperEngineHostTests
 
         Assert.Equal(HostRuntimeState.Active, host.Status.State);
         Assert.Equal(RenderLayerState.Running, lifecycle.State);
+    }
+
+    [Fact]
+    public async Task Poll_DoesNotRepeatWindowMutationWhenParentIsUnchanged()
+    {
+        var lifecycle = new FakeRenderLifecycle();
+        await lifecycle.StartAsync();
+        var interop = new FakeWallpaperEngineInterop
+        {
+            ParentWindow = 200,
+            RenderingVisible = true,
+        };
+        await using var host = CreateHost(lifecycle, interop);
+        host.Attach(100);
+
+        host.Poll();
+        host.Poll();
+
+        Assert.Equal(1, interop.PlacementCount);
+        Assert.Equal(1, interop.InputInitializationCount);
     }
 
     [Fact]
@@ -204,7 +224,7 @@ public sealed class WallpaperEngineHostTests
 
         public int PlacementCount { get; private set; }
 
-        public int InputRoutingCount { get; private set; }
+        public int InputInitializationCount { get; private set; }
 
         public int InputRestoreCount { get; private set; }
 
@@ -228,10 +248,11 @@ public sealed class WallpaperEngineHostTests
         {
             PlacementCount++;
             LastPlacementParent = parentWindowHandle;
+            ParentWindow = parentWindowHandle;
         }
 
-        public void EnsureInteractiveInput(nint parentWindowHandle) =>
-            InputRoutingCount++;
+        public void InitializeInteractiveInput(nint parentWindowHandle) =>
+            InputInitializationCount++;
 
         public void RestoreInteractiveInput() => InputRestoreCount++;
     }

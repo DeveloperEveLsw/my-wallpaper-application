@@ -84,8 +84,8 @@
 통과 상태: 완료. 실제 Wallpaper Engine 2.8.42에서 전달된 `-parentHWND` 아래에 WPF
 HWND를 배치하고, 우클릭 단일 메뉴·Desktop 포커스 복귀·pause/resume·reload를 검증했다.
 Explorer 재시작으로 끊어진 worker 계층은 감지 후 제한된 엔진 재시작으로 복구하며,
-WorkerW를 자르지 않고 실행 중인 앱의 host poll에서 입력 라우팅만 주 모니터 영역으로
-제한한다.
+WorkerW를 자르지 않는다. Wallpaper Engine 소유 HWND는 초기 attach에서만 입력 가능
+상태로 전환하고 실행 중 host poll은 창을 반복 변경하지 않는다.
 엔진 종료는 suspend되지 않는
 watchdog이 고아 WPF 프로세스 없이 처리하고 앱·엔진 강제 종료 뒤 Explorer 입력 상태도
 복원한다. 원본 Desktop 아이콘은 Wallpaper Engine 공식 제어 명령만 사용한다.

@@ -13,7 +13,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const string DesktopProgramManagerWindowClass = "Progman";
     private const string DesktopViewWindowClass = "SHELLDLL_DefView";
     private const string DesktopWorkerWindowClass = "WorkerW";
-    private const string WebViewCompositionWindowClass = "Chrome_WidgetWin_0";
     private const int WindowStyleIndex = -16;
     private const int ExtendedWindowStyleIndex = -20;
     private const long ChildWindowStyle = 0x40000000L;
@@ -29,15 +28,17 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const uint ShowWindowFlag = 0x0040;
     private const uint NoMove = 0x0002;
     private const uint NoSize = 0x0001;
-    private const uint NoZOrder = 0x0004;
     private const uint NoOwnerZOrder = 0x0200;
+    private const uint AsyncWindowPos = 0x4000;
     private const uint DwmWindowAttributeCloaked = 14;
 
     private readonly object _interactiveInputLock = new();
     private nint _interactiveIntermediateWindow;
     private nint _interactiveWorkerWindow;
     private nint _desktopViewWindow;
-    private bool _interactiveWorkerRaised;
+    private bool _originalWorkerEnabled;
+    private long _originalWorkerExtendedStyle;
+    private bool _interactiveInputConfigured;
 
     public bool IsWindow(nint windowHandle) => NativeIsWindow(windowHandle);
 
@@ -186,76 +187,24 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             }
         }
 
-        NormalizeWebViewCompositionWindow(windowHandle, parentWindowHandle);
     }
 
-    private static void NormalizeWebViewCompositionWindow(
-        nint windowHandle,
-        nint parentWindowHandle)
-    {
-        _ = GetWindowThreadProcessId(windowHandle, out var applicationProcessId);
-        if (applicationProcessId == 0)
-        {
-            return;
-        }
-
-        var compositionWindow = FindWindowEx(
-            parentWindowHandle,
-            0,
-            WebViewCompositionWindowClass,
-            null);
-        while (compositionWindow != 0)
-        {
-            _ = GetWindowThreadProcessId(compositionWindow, out var processId);
-            if (processId == applicationProcessId)
-            {
-                _ = SetParent(compositionWindow, windowHandle);
-                if (GetParent(compositionWindow) != windowHandle)
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                }
-
-                if (!SetWindowPos(
-                        compositionWindow,
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                        NoActivate | NoZOrder))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                }
-
-                return;
-            }
-
-            compositionWindow = FindWindowEx(
-                parentWindowHandle,
-                compositionWindow,
-                WebViewCompositionWindowClass,
-                null);
-        }
-    }
-
-    public void EnsureInteractiveInput(nint parentWindowHandle)
+    public void InitializeInteractiveInput(nint parentWindowHandle)
     {
         lock (_interactiveInputLock)
         {
-            if (_interactiveIntermediateWindow != parentWindowHandle ||
-                !NativeIsWindow(_interactiveWorkerWindow) ||
-                !NativeIsWindow(_desktopViewWindow))
+            // EnableWindow and style changes target a foreign WorkerW and can dispatch
+            // synchronous messages. Perform them only once for each validated parent.
+            if (_interactiveInputConfigured &&
+                _interactiveIntermediateWindow == parentWindowHandle &&
+                NativeIsWindow(_interactiveWorkerWindow) &&
+                NativeIsWindow(_desktopViewWindow))
             {
-                RestoreInteractiveInputCore();
-                CaptureInteractiveDesktop(parentWindowHandle);
+                return;
             }
 
-            if (!GetCursorPos(out var cursorPosition))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            UpdateInteractiveWorker(cursorPosition.X, cursorPosition.Y);
+            RestoreInteractiveInputCore();
+            CaptureInteractiveDesktop(parentWindowHandle);
         }
     }
 
@@ -306,7 +255,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
 
         var programManager = GetParent(workerWindow);
         if (!HasWindowClass(programManager, DesktopProgramManagerWindowClass) ||
-            HasActiveWallpaperChild(workerWindow))
+            HasActiveWallpaperChild(workerWindow, ignoredIntermediateWindow: 0))
         {
             return;
         }
@@ -315,7 +264,9 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         RestoreInteractiveWorker(workerWindow, desktopView);
     }
 
-    private static bool HasActiveWallpaperChild(nint workerWindow)
+    private static bool HasActiveWallpaperChild(
+        nint workerWindow,
+        nint ignoredIntermediateWindow)
     {
         var intermediateWindow = FindWindowEx(
             workerWindow,
@@ -324,7 +275,8 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             null);
         while (intermediateWindow != 0)
         {
-            if (FindWindowEx(intermediateWindow, 0, null, null) != 0)
+            if (intermediateWindow != ignoredIntermediateWindow &&
+                FindWindowEx(intermediateWindow, 0, null, null) != 0)
             {
                 return true;
             }
@@ -366,62 +318,34 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         _interactiveIntermediateWindow = intermediateWindow;
         _interactiveWorkerWindow = workerWindow;
         _desktopViewWindow = desktopView;
-        _interactiveWorkerRaised = false;
+        _originalWorkerEnabled = IsWindowEnabled(workerWindow);
+        _originalWorkerExtendedStyle =
+            GetWindowLongPtr(workerWindow, ExtendedWindowStyleIndex).ToInt64();
+        _interactiveInputConfigured = true;
 
-        if (SetWindowRgn(workerWindow, 0, true) == 0)
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
+        SetInteractiveWorkerState(workerWindow);
     }
 
-    private void UpdateInteractiveWorker(int cursorX, int cursorY)
-    {
-        if (!GetWindowRect(_interactiveIntermediateWindow, out var intermediateRectangle))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        var enableInput = WallpaperEngineInputScope.Contains(
-            cursorX,
-            cursorY,
-            intermediateRectangle.Left,
-            intermediateRectangle.Top,
-            intermediateRectangle.Right,
-            intermediateRectangle.Bottom);
-        SetInteractiveWorkerState(
-            _interactiveWorkerWindow,
-            enableInput,
-            ref _interactiveWorkerRaised);
-    }
-
-    private static void SetInteractiveWorkerState(
-        nint workerWindow,
-        bool enableInput,
-        ref bool interactiveWorkerRaised)
+    private static void SetInteractiveWorkerState(nint workerWindow)
     {
         if (!NativeIsWindow(workerWindow))
         {
             throw new InvalidOperationException("상호작용할 Desktop HWND가 더 이상 유효하지 않습니다.");
         }
 
-        var stateChanged = IsWindowEnabled(workerWindow) != enableInput;
+        var stateChanged = !IsWindowEnabled(workerWindow);
         if (stateChanged)
         {
-            _ = EnableWindow(workerWindow, enableInput);
+            _ = EnableWindow(workerWindow, true);
         }
 
-        if (IsWindowEnabled(workerWindow) != enableInput)
+        if (!IsWindowEnabled(workerWindow))
         {
-            throw new InvalidOperationException(
-                enableInput
-                    ? "Wallpaper Engine WorkerW를 활성화하지 못했습니다."
-                    : "Wallpaper Engine WorkerW 입력을 격리하지 못했습니다.");
+            throw new InvalidOperationException("Wallpaper Engine WorkerW를 활성화하지 못했습니다.");
         }
 
         var extendedStyle = GetWindowLongPtr(workerWindow, ExtendedWindowStyleIndex).ToInt64();
-        var interactiveStyle = enableInput
-            ? extendedStyle & ~TransparentExtendedWindowStyle
-            : extendedStyle | TransparentExtendedWindowStyle;
+        var interactiveStyle = extendedStyle & ~TransparentExtendedWindowStyle;
         var styleChanged = interactiveStyle != extendedStyle;
         if (styleChanged)
         {
@@ -431,28 +355,13 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 new nint(interactiveStyle));
         }
 
-        if (!enableInput)
-        {
-            interactiveWorkerRaised = false;
-        }
-
-        if (!stateChanged &&
-            !styleChanged &&
-            (!enableInput || interactiveWorkerRaised))
-        {
-            return;
-        }
-
         var placementFlags = NoMove |
             NoSize |
             NoActivate |
             NoOwnerZOrder |
             FrameChanged |
-            ShowWindowFlag;
-        if (!enableInput)
-        {
-            placementFlags |= NoZOrder;
-        }
+            ShowWindowFlag |
+            AsyncWindowPos;
 
         if (!SetWindowPos(
                 workerWindow,
@@ -465,40 +374,63 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
-
-        interactiveWorkerRaised = enableInput;
     }
 
     private void RestoreInteractiveInputCore()
     {
+        var intermediateWindow = _interactiveIntermediateWindow;
         var workerWindow = _interactiveWorkerWindow;
         var desktopView = _desktopViewWindow;
+        var originalWorkerEnabled = _originalWorkerEnabled;
+        var originalWorkerExtendedStyle = _originalWorkerExtendedStyle;
+        var inputWasConfigured = _interactiveInputConfigured;
         _interactiveIntermediateWindow = 0;
         _interactiveWorkerWindow = 0;
         _desktopViewWindow = 0;
-        _interactiveWorkerRaised = false;
+        _originalWorkerEnabled = false;
+        _originalWorkerExtendedStyle = 0;
+        _interactiveInputConfigured = false;
 
-        if (!NativeIsWindow(workerWindow))
+        if (!inputWasConfigured ||
+            !NativeIsWindow(workerWindow) ||
+            HasActiveWallpaperChild(workerWindow, intermediateWindow))
         {
             return;
         }
 
-        RestoreInteractiveWorker(workerWindow, desktopView);
+        RestoreInteractiveWorker(
+            workerWindow,
+            desktopView,
+            originalWorkerEnabled,
+            originalWorkerExtendedStyle);
     }
 
     private static void RestoreInteractiveWorker(nint workerWindow, nint desktopView)
+    {
+        var extendedStyle = GetWindowLongPtr(workerWindow, ExtendedWindowStyleIndex).ToInt64();
+        RestoreInteractiveWorker(
+            workerWindow,
+            desktopView,
+            workerEnabled: false,
+            extendedStyle | TransparentExtendedWindowStyle);
+    }
+
+    private static void RestoreInteractiveWorker(
+        nint workerWindow,
+        nint desktopView,
+        bool workerEnabled,
+        long workerExtendedStyle)
     {
         if (!NativeIsWindow(workerWindow))
         {
             return;
         }
 
-        var extendedStyle = GetWindowLongPtr(workerWindow, ExtendedWindowStyleIndex).ToInt64();
         _ = SetWindowLongPtr(
             workerWindow,
             ExtendedWindowStyleIndex,
-            new nint(extendedStyle | TransparentExtendedWindowStyle));
-        _ = EnableWindow(workerWindow, false);
+            new nint(workerExtendedStyle));
+        _ = EnableWindow(workerWindow, workerEnabled);
         _ = SetWindowRgn(workerWindow, 0, true);
 
         if (NativeIsWindow(desktopView))
@@ -510,7 +442,12 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 0,
                 0,
                 0,
-                NoMove | NoSize | NoActivate | NoOwnerZOrder | FrameChanged);
+                NoMove |
+                NoSize |
+                NoActivate |
+                NoOwnerZOrder |
+                FrameChanged |
+                AsyncWindowPos);
         }
     }
 
@@ -629,9 +566,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         out int value,
         int valueSize);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(out NativePoint point);
 #pragma warning restore SYSLIB1054
 
     [StructLayout(LayoutKind.Sequential)]
