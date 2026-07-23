@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace Wallpaper.Seelen.M0.Companion;
+namespace Wallpaper.Seelen.Bootstrap;
 
 internal sealed record CompanionOptions(
     BootstrapNonce BootstrapNonce,

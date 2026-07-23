@@ -3,10 +3,9 @@
 - 상태: Wallpaper Engine 우선 프레젠테이션 구현 기준
 - 원칙: WPF 애플리케이션 중심, Wallpaper Engine 제품 경로, 실제 파일 시스템 우선
 
-> 2026-07-24부터 Seelen UI 위젯 + .NET Companion 전환 가능성을 M0에서 검증한다.
-> 아래 내용은 M0 통과 전까지 보존하는 기존 제품 기준이다. 새 실험은 기존 프로젝트와
-> 분리되어 있으며 [ADR 0013](decisions/0013-seelen-companion-m0-spike.md)과
-> [M0 검수 기록](m0-seelen-validation.md)을 따른다.
+> 2026-07-24 Seelen UI 위젯 + .NET Companion M0를 통과했고 M1·M2 제품 경로를
+> 구현했다. 새 구조는 [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md)를 따른다.
+> 아래 Wallpaper Engine/WPF 구조는 Seelen 실기기 전환 검수가 끝날 때까지 보존한다.
 
 ## 1. 구성 개요
 

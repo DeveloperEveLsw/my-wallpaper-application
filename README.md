@@ -9,8 +9,10 @@ WPF 기반 데스크톱 애플리케이션이다.
 
 ## 현재 상태
 
-- Seelen UI `Desktop`/`Popup` 위젯 + .NET Companion 전환을 위한 M0 기술 스파이크 시작
-- M0 실기기 게이트 통과 전까지 기존 Wallpaper Engine/WPF WebView2/three.js 구현 보존
+- Seelen UI + .NET Companion M0 기술 게이트 통과
+- Seelen M1 읽기 전용 제품 수직 경로와 M2 동기화·visual·대량 목록 구현 완료
+- M1·M2 WSL 자동 검증 통과, Windows Seelen 실기기 검수 대기
+- 기존 Wallpaper Engine/WPF WebView2/three.js 구현은 Seelen 전환 검수 완료까지 보존
 - M6 Wallpaper Engine 로컬 Application Wallpaper 구현·Windows 실기기 검수 완료
 - WebView2/three.js 렌더 경로 검증용 `Baseline` 기본 장면 구현
 - WPF 애플리케이션이 제품 본체
@@ -32,7 +34,7 @@ WPF 기반 데스크톱 애플리케이션이다.
 - parent-first HWND 구조는 자동 검증·개발 창 검증 완료, Wallpaper Engine 실기기 재검증 필요
 - 앱 reload, Explorer worker 복구와 앱·엔진 강제 종료 입력 복원 watchdog 구현
 - Wallpaper Engine 공식 제어 명령을 통한 Windows 원본 Desktop 아이콘 숨김·복원
-- 다음 단계는 M7 성능·DPI·대량 항목·반복 복구 안정화
+- 다음 게이트는 Seelen M1·M2 Windows 실기기 검수와 발견 결함 수정
 
 ## 기준 문서
 
@@ -47,6 +49,8 @@ WPF 기반 데스크톱 애플리케이션이다.
 - [Wallpaper Engine 우선 프레젠테이션 결정](docs/decisions/0012-wallpaper-engine-first-presentation.md)
 - [Seelen UI + Companion M0 결정](docs/decisions/0013-seelen-companion-m0-spike.md)
 - [M0 Seelen 검수 기록](docs/m0-seelen-validation.md)
+- [Seelen M1·M2 제품 경로 결정](docs/decisions/0014-seelen-m1-m2-product-path.md)
+- [Seelen M1·M2 검수 기록](docs/m1-m2-seelen-validation.md)
 - [MVP 개발 계획](docs/mvp-development-plan.md)
 - [M5 검수 기록](docs/m5-validation.md)
 - [M6 검수 기록](docs/m6-validation.md)
@@ -73,6 +77,17 @@ Windows PowerShell:
 $fixture = ./scripts/new-mvp-fixture.ps1
 ./scripts/run-dev-window.ps1
 ```
+
+Seelen M1·M2 제품 경로는 Windows 로컬 checkout에서 다음과 같이 배치한다.
+
+```powershell
+./scripts/prepare-seelen-m1-m2.ps1
+$fixture = ./scripts/new-m2-fixture.ps1
+```
+
+Seelen 재시작 뒤 `@wallpaper/desktop`을 활성화하고 설정 패널에
+`$fixture.RootPath`를 적용한다. 세부 검수는
+[Seelen M1·M2 검수 기록](docs/m1-m2-seelen-validation.md)을 따른다.
 
 M2 기능을 함께 검증할 때는 다음 fixture를 사용한다.
 

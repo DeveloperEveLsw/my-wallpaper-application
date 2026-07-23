@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Wallpaper.Seelen.M0.Companion;
+namespace Wallpaper.Seelen.Bootstrap;
 
 internal sealed class SessionRegistry(TimeProvider timeProvider)
 {

@@ -1,0 +1,20 @@
+id: "@wallpaper/desktop"
+icon: PiDesktop
+metadata:
+  displayName:
+    en: Wallpaper Desktop
+    ko: Wallpaper 데스크톱
+  description:
+    en: Live file dock backed by the local Wallpaper Companion.
+    ko: 로컬 Wallpaper Companion이 제공하는 라이브 파일 Dock.
+  tags:
+    - desktop
+    - files
+  appTargetVersion: [2, 8, 0]
+instances: Single
+loader: ThirdParty
+preset: Desktop
+html: !include index.html
+js: !include index.js
+css: !include index.css
+settings: []

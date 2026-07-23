@@ -1,7 +1,7 @@
 using System.Buffers.Text;
 using System.Security.Cryptography;
 
-namespace Wallpaper.Seelen.M0.Companion;
+namespace Wallpaper.Seelen.Bootstrap;
 
 internal static class Base64Url
 {

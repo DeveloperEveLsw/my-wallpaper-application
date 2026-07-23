@@ -6,6 +6,8 @@
     <Project Path="src/Wallpaper.Infrastructure.Windows/Wallpaper.Infrastructure.Windows.csproj" />
     <Project Path="src/Wallpaper.Rendering.Abstractions/Wallpaper.Rendering.Abstractions.csproj" />
     <Project Path="src/Wallpaper.Rendering.WebView/Wallpaper.Rendering.WebView.csproj" />
+    <Project Path="src/Wallpaper.Seelen/Wallpaper.Seelen.csproj" />
+    <Project Path="src/Wallpaper.Seelen.Companion/Wallpaper.Seelen.Companion.csproj" />
   </Folder>
   <Folder Name="/spikes/seelen-m0/">
     <Project Path="spikes/seelen-m0/companion/Wallpaper.Seelen.M0.Companion/Wallpaper.Seelen.M0.Companion.csproj" />
@@ -15,5 +17,6 @@
     <Project Path="tests/Wallpaper.Core.Tests/Wallpaper.Core.Tests.csproj" />
     <Project Path="tests/Wallpaper.Hosts.Tests/Wallpaper.Hosts.Tests.csproj" />
     <Project Path="tests/Wallpaper.Infrastructure.Windows.Tests/Wallpaper.Infrastructure.Windows.Tests.csproj" />
+    <Project Path="tests/Wallpaper.Seelen.Tests/Wallpaper.Seelen.Tests.csproj" />
   </Folder>
 </Solution>

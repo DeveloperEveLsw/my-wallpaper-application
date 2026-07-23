@@ -30,3 +30,5 @@ while IFS= read -r visualizer_script; do
 done < <(find src/Wallpaper.Rendering.WebView/WebAssets -type f -name '*.js' -not -path '*/vendor/*' | sort)
 "$WALLPAPER_NPM" --prefix spikes/seelen-m0/widgets ci --ignore-scripts
 "$WALLPAPER_NPM" --prefix spikes/seelen-m0/widgets run check
+"$WALLPAPER_NPM" --prefix src/Wallpaper.Seelen.Widgets ci --ignore-scripts
+"$WALLPAPER_NPM" --prefix src/Wallpaper.Seelen.Widgets run check

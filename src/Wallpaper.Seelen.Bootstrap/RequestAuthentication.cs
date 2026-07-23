@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Primitives;
 
-namespace Wallpaper.Seelen.M0.Companion;
+namespace Wallpaper.Seelen.Bootstrap;
 
 internal static class RequestAuthentication
 {

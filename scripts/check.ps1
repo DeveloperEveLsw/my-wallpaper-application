@@ -33,6 +33,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "widget npm ci failed with exit code $LASTEXITCODE" }
     & $npm --prefix $widgetsRoot run check
     if ($LASTEXITCODE -ne 0) { throw "widget build failed with exit code $LASTEXITCODE" }
+
+    $productWidgetsRoot = Join-Path $repoRoot 'src\Wallpaper.Seelen.Widgets'
+    & $npm --prefix $productWidgetsRoot ci --ignore-scripts
+    if ($LASTEXITCODE -ne 0) { throw "product widget npm ci failed with exit code $LASTEXITCODE" }
+    & $npm --prefix $productWidgetsRoot run check
+    if ($LASTEXITCODE -ne 0) { throw "product widget build failed with exit code $LASTEXITCODE" }
 }
 finally {
     Pop-Location

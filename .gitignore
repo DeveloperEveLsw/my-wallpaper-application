@@ -7,6 +7,7 @@ artifacts/
 **/node_modules/
 spikes/seelen-m0/widgets/desktop/index.js
 spikes/seelen-m0/widgets/popup/index.js
+src/Wallpaper.Seelen.Widgets/desktop/index.js
 
 # Visual Studio and JetBrains user state
 .vs/

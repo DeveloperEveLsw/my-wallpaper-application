@@ -1,4 +1,4 @@
-namespace Wallpaper.Seelen.M0.Companion;
+namespace Wallpaper.Seelen.Bootstrap;
 
 internal sealed class HostPolicy(int port)
 {

@@ -1,5 +1,11 @@
 # MVP 개발 계획
 
+> 2026-07-24 Seelen UI + .NET Companion 전환 M0를 통과했다. 새 제품 경로의 M1·M2는
+> 구현 및 WSL 자동 검증을 완료했고 Windows Seelen 실기기 검수를 기다린다.
+> 아래 M0~M8은 보존 중인 Wallpaper Engine/WPF 기준의 기존 이력이다.
+> 새 경계는 [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md)와
+> [Seelen M1·M2 검수 기록](m1-m2-seelen-validation.md)을 따른다.
+
 - 상태: 구현 진행 중
 - 현재 단계: M6 완료, M7 안정화 준비
 

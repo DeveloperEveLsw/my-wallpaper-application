@@ -1,0 +1,46 @@
+<main id="wallpaper-desktop" aria-label="Wallpaper Desktop">
+  <div id="settings-trigger" aria-hidden="true"></div>
+  <aside id="settings-panel" class="glass settings-panel" hidden>
+    <header>
+      <div>
+        <p class="eyebrow">WALLPAPER DESKTOP</p>
+        <h1>파일 Dock</h1>
+      </div>
+      <button id="settings-close" type="button" aria-label="설정 닫기">×</button>
+    </header>
+    <dl>
+      <div><dt>상태</dt><dd id="connection-status">연결 중</dd></div>
+      <div><dt>루트</dt><dd id="root-path">확인 중</dd></div>
+      <div><dt>감시</dt><dd id="watch-status">확인 중</dd></div>
+    </dl>
+    <label class="root-field">
+      <span>루트 폴더</span>
+      <input id="root-input" type="text" spellcheck="false" autocomplete="off" />
+    </label>
+    <div class="root-actions">
+      <button id="root-choose" class="primary-button" type="button">폴더 선택</button>
+      <button id="root-apply" class="primary-button" type="button">경로 적용</button>
+    </div>
+    <button id="refresh-button" class="primary-button" type="button">전체 다시 읽기</button>
+    <output id="status-message" aria-live="polite"></output>
+  </aside>
+
+  <section id="dock" class="glass dock" aria-label="폴더 Dock"></section>
+
+  <div id="file-modal" class="modal-backdrop" hidden>
+    <section class="glass file-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header>
+        <div>
+          <p class="eyebrow">FILES</p>
+          <h2 id="modal-title">파일</h2>
+        </div>
+        <button id="modal-close" type="button" aria-label="닫기">×</button>
+      </header>
+      <p id="modal-summary"></p>
+      <div id="file-list" class="file-list" tabindex="0">
+        <div id="file-list-spacer"></div>
+        <div id="file-list-rows"></div>
+      </div>
+    </section>
+  </div>
+</main>

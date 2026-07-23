@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Wallpaper.Core\Wallpaper.Core.csproj" />
+    <ProjectReference Include="..\Wallpaper.Infrastructure.Windows\Wallpaper.Infrastructure.Windows.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>

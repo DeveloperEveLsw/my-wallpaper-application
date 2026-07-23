@@ -1,0 +1,19 @@
+{
+  "name": "wallpaper-seelen-widgets",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "npm run build && node --check desktop/index.js"
+  },
+  "dependencies": {
+    "@seelen-ui/lib": "2.8.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.8"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
