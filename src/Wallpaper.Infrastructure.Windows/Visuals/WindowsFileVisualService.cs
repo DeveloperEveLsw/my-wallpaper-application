@@ -14,13 +14,15 @@ public sealed class WindowsFileVisualService : IFileVisualService
 {
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiLargeIcon = 0x000000000;
+    private const uint ShgfiSystemIconIndex = 0x000004000;
+    private const int ImageListDrawTransparent = 0x00000001;
     private const int DefaultCacheCapacity = 512;
 
     private static readonly HashSet<string> ImageExtensions = new(
         [".bmp", ".dib", ".gif", ".heic", ".heif", ".jfif", ".jpe", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"],
         StringComparer.OrdinalIgnoreCase);
 
-    private readonly ConcurrentDictionary<VisualCacheKey, Lazy<Task<ImageSource?>>> _cache = new();
+    private readonly ConcurrentDictionary<VisualCacheKey, Lazy<Task<FileVisualResult?>>> _cache = new();
     private readonly ConcurrentQueue<VisualCacheKey> _insertionOrder = new();
     private readonly int _cacheCapacity;
 
@@ -34,7 +36,7 @@ public sealed class WindowsFileVisualService : IFileVisualService
         _cacheCapacity = cacheCapacity;
     }
 
-    public Task<ImageSource?> LoadShellIconAsync(
+    public Task<FileVisualResult?> LoadShellIconAsync(
         DesktopFile file,
         string absolutePath,
         int targetPixelWidth,
@@ -47,11 +49,13 @@ public sealed class WindowsFileVisualService : IFileVisualService
         var key = CreateKey(VisualKind.ShellIcon, file, absolutePath, targetPixelWidth);
         return GetOrLoadAsync(
             key,
-            () => LoadShellIcon(absolutePath, targetPixelWidth),
+            () => CreateVisualResult(
+                LoadShellIcon(absolutePath, targetPixelWidth),
+                FileVisualKind.ShellIcon),
             cancellationToken);
     }
 
-    public Task<ImageSource?> LoadThumbnailAsync(
+    public Task<FileVisualResult?> LoadThumbnailAsync(
         DesktopFile file,
         string absolutePath,
         int targetPixelWidth,
@@ -63,22 +67,24 @@ public sealed class WindowsFileVisualService : IFileVisualService
 
         if (!ImageExtensions.Contains(file.Extension))
         {
-            return Task.FromResult<ImageSource?>(null);
+            return Task.FromResult<FileVisualResult?>(null);
         }
 
         var key = CreateKey(VisualKind.Thumbnail, file, absolutePath, targetPixelWidth);
         return GetOrLoadAsync(
             key,
-            () => LoadThumbnail(absolutePath, targetPixelWidth),
+            () => CreateVisualResult(
+                LoadThumbnail(absolutePath, targetPixelWidth),
+                FileVisualKind.Thumbnail),
             cancellationToken);
     }
 
-    private async Task<ImageSource?> GetOrLoadAsync(
+    private async Task<FileVisualResult?> GetOrLoadAsync(
         VisualCacheKey key,
-        Func<ImageSource?> loader,
+        Func<FileVisualResult?> loader,
         CancellationToken cancellationToken)
     {
-        var candidate = new Lazy<Task<ImageSource?>>(
+        var candidate = new Lazy<Task<FileVisualResult?>>(
             () => Task.Run(loader),
             LazyThreadSafetyMode.ExecutionAndPublication);
         var cached = _cache.GetOrAdd(key, candidate);
@@ -99,7 +105,7 @@ public sealed class WindowsFileVisualService : IFileVisualService
         }
     }
 
-    private static ImageSource? LoadShellIcon(string absolutePath, int targetPixelWidth)
+    private static BitmapSource? LoadShellIcon(string absolutePath, int targetPixelWidth)
     {
         IShellItemImageFactory? imageFactory = null;
         nint bitmapHandle = 0;
@@ -113,7 +119,7 @@ public sealed class WindowsFileVisualService : IFileVisualService
                 out imageFactory);
             if (createResult < 0 || imageFactory is null)
             {
-                return LoadLegacyShellIcon(absolutePath);
+                return LoadLegacyShellIcon(absolutePath, targetPixelWidth);
             }
 
             var imageResult = imageFactory.GetImage(
@@ -122,7 +128,7 @@ public sealed class WindowsFileVisualService : IFileVisualService
                 out bitmapHandle);
             if (imageResult < 0 || bitmapHandle == 0)
             {
-                return LoadLegacyShellIcon(absolutePath);
+                return LoadLegacyShellIcon(absolutePath, targetPixelWidth);
             }
 
             var image = Imaging.CreateBitmapSourceFromHBitmap(
@@ -139,7 +145,7 @@ public sealed class WindowsFileVisualService : IFileVisualService
                 System.Security.SecurityException or
                 ExternalException)
         {
-            return LoadLegacyShellIcon(absolutePath);
+            return LoadLegacyShellIcon(absolutePath, targetPixelWidth);
         }
         finally
         {
@@ -155,7 +161,83 @@ public sealed class WindowsFileVisualService : IFileVisualService
         }
     }
 
-    private static ImageSource? LoadLegacyShellIcon(string absolutePath)
+    private static BitmapSource? LoadLegacyShellIcon(string absolutePath, int targetPixelWidth) =>
+        LoadSystemImageListIcon(absolutePath, targetPixelWidth) ?? LoadClassicShellIcon(absolutePath);
+
+    private static BitmapSource? LoadSystemImageListIcon(string absolutePath, int targetPixelWidth)
+    {
+        IImageList? imageList = null;
+        nint iconHandle = 0;
+        try
+        {
+            var fileInfo = new ShellFileInfo();
+            var fileInfoResult = SHGetFileInfo(
+                absolutePath,
+                fileAttributes: 0,
+                ref fileInfo,
+                (uint)Marshal.SizeOf<ShellFileInfo>(),
+                ShgfiSystemIconIndex);
+            if (fileInfoResult == 0)
+            {
+                return null;
+            }
+
+            var interfaceId = typeof(IImageList).GUID;
+            var imageListSize = targetPixelWidth > 48
+                ? SystemImageListSize.Jumbo
+                : SystemImageListSize.ExtraLarge;
+            var imageListResult = SHGetImageList(
+                imageListSize,
+                ref interfaceId,
+                out imageList);
+            if (imageListResult < 0 || imageList is null)
+            {
+                return null;
+            }
+
+            var iconResult = imageList.GetIcon(
+                fileInfo.IconIndex,
+                ImageListDrawTransparent,
+                out iconHandle);
+            if (iconResult < 0 || iconHandle == 0)
+            {
+                return null;
+            }
+
+            var image = Imaging.CreateBitmapSourceFromHIcon(
+                iconHandle,
+                Int32Rect.Empty,
+                BitmapSizeOptions.FromEmptyOptions());
+            image.Freeze();
+            return image;
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+                UnauthorizedAccessException or
+                System.Security.SecurityException or
+                ExternalException or
+                EntryPointNotFoundException or
+                DllNotFoundException or
+                ArgumentException or
+                InvalidOperationException)
+        {
+            return null;
+        }
+        finally
+        {
+            if (iconHandle != 0)
+            {
+                _ = DestroyIcon(iconHandle);
+            }
+
+            if (imageList is not null && Marshal.IsComObject(imageList))
+            {
+                _ = Marshal.FinalReleaseComObject(imageList);
+            }
+        }
+    }
+
+    private static BitmapSource? LoadClassicShellIcon(string absolutePath)
     {
         try
         {
@@ -195,7 +277,7 @@ public sealed class WindowsFileVisualService : IFileVisualService
         }
     }
 
-    private static ImageSource? LoadThumbnail(string absolutePath, int targetPixelWidth)
+    private static BitmapSource? LoadThumbnail(string absolutePath, int targetPixelWidth)
     {
         try
         {
@@ -206,11 +288,27 @@ public sealed class WindowsFileVisualService : IFileVisualService
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 64 * 1024,
                 FileOptions.SequentialScan);
+            var decoder = BitmapDecoder.Create(
+                stream,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.None);
+            var frame = decoder.Frames[0];
+            var decodeByWidth = frame.PixelWidth <= frame.PixelHeight;
+            stream.Position = 0;
+
             var image = new BitmapImage();
             image.BeginInit();
             image.CacheOption = BitmapCacheOption.OnLoad;
             image.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
-            image.DecodePixelWidth = targetPixelWidth;
+            if (decodeByWidth)
+            {
+                image.DecodePixelWidth = targetPixelWidth;
+            }
+            else
+            {
+                image.DecodePixelHeight = targetPixelWidth;
+            }
+
             image.StreamSource = stream;
             image.EndInit();
             image.Freeze();
@@ -228,6 +326,62 @@ public sealed class WindowsFileVisualService : IFileVisualService
         {
             return null;
         }
+    }
+
+    private static FileVisualResult? CreateVisualResult(BitmapSource? source, FileVisualKind kind)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        var sourcePixelWidth = source.PixelWidth;
+        var sourcePixelHeight = source.PixelHeight;
+        var analysis = AnalyzeAlpha(source);
+        var normalizedSource = analysis.Presentation == FileVisualPresentation.Contained
+            ? CropTransparentPadding(source, analysis)
+            : source;
+
+        return new FileVisualResult(
+            normalizedSource,
+            kind,
+            analysis.Presentation,
+            sourcePixelWidth,
+            sourcePixelHeight);
+    }
+
+    private static AlphaCoverageAnalysis AnalyzeAlpha(BitmapSource source)
+    {
+        var analysisSource = source.Format == PixelFormats.Bgra32 || source.Format == PixelFormats.Pbgra32
+            ? source
+            : new FormatConvertedBitmap(source, PixelFormats.Bgra32, destinationPalette: null, alphaThreshold: 0);
+        var stride = checked(analysisSource.PixelWidth * 4);
+        var pixels = new byte[checked(stride * analysisSource.PixelHeight)];
+        analysisSource.CopyPixels(pixels, stride, offset: 0);
+        return FileVisualAlphaAnalyzer.Analyze(
+            pixels,
+            analysisSource.PixelWidth,
+            analysisSource.PixelHeight,
+            stride);
+    }
+
+    private static BitmapSource CropTransparentPadding(
+        BitmapSource source,
+        AlphaCoverageAnalysis analysis)
+    {
+        if (analysis.Left == 0 &&
+            analysis.Top == 0 &&
+            analysis.Width == source.PixelWidth &&
+            analysis.Height == source.PixelHeight)
+        {
+            return source;
+        }
+
+        var cropped = new CroppedBitmap(
+            source,
+            new Int32Rect(analysis.Left, analysis.Top, analysis.Width, analysis.Height));
+        cropped.Freeze();
+        return cropped;
     }
 
     private static VisualCacheKey CreateKey(
@@ -257,6 +411,12 @@ public sealed class WindowsFileVisualService : IFileVisualService
         uint fileInfoSize,
         uint flags);
 
+    [DllImport("shell32.dll", PreserveSig = true)]
+    private static extern int SHGetImageList(
+        SystemImageListSize imageList,
+        ref Guid interfaceId,
+        [MarshalAs(UnmanagedType.Interface)] out IImageList? imageListInterface);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyIcon(nint iconHandle);
@@ -277,11 +437,47 @@ public sealed class WindowsFileVisualService : IFileVisualService
             out nint bitmapHandle);
     }
 
+    [ComImport]
+    [Guid("46EB5926-582E-4017-9FDF-E8998DAA0950")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IImageList
+    {
+        [PreserveSig]
+        int Add(nint imageBitmap, nint maskBitmap, out int imageIndex);
+
+        [PreserveSig]
+        int ReplaceIcon(int imageIndex, nint iconHandle, out int replacementIndex);
+
+        [PreserveSig]
+        int SetOverlayImage(int imageIndex, int overlayIndex);
+
+        [PreserveSig]
+        int Replace(int imageIndex, nint imageBitmap, nint maskBitmap);
+
+        [PreserveSig]
+        int AddMasked(nint imageBitmap, uint maskColor, out int imageIndex);
+
+        [PreserveSig]
+        int Draw(nint drawParameters);
+
+        [PreserveSig]
+        int Remove(int imageIndex);
+
+        [PreserveSig]
+        int GetIcon(int imageIndex, int flags, out nint iconHandle);
+    }
+
     [Flags]
     private enum ShellItemImageFactoryFlags : uint
     {
         BiggerSizeOk = 0x00000001,
         IconOnly = 0x00000004,
+    }
+
+    private enum SystemImageListSize
+    {
+        ExtraLarge = 2,
+        Jumbo = 4,
     }
 
     [StructLayout(LayoutKind.Sequential)]

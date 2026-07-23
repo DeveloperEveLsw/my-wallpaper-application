@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:rendering="clr-namespace:Wallpaper.Rendering.WebView;assembly=Wallpaper.Rendering.WebView"
+        xmlns:visuals="clr-namespace:Wallpaper.Infrastructure.Windows.Visuals;assembly=Wallpaper.Infrastructure.Windows"
         mc:Ignorable="d"
         Title="My Wallpaper Application"
         Width="1440"
@@ -329,25 +330,79 @@
                                                         </Style>
                                                     </Border.Style>
                                                     <StackPanel VerticalAlignment="Center">
-                                                        <Grid Width="58" Height="62" HorizontalAlignment="Center">
-                                                            <Border Background="#22FFFFFF"
-                                                                    BorderBrush="#44FFFFFF"
+                                                        <Grid Width="64"
+                                                              Height="64"
+                                                              HorizontalAlignment="Center">
+                                                            <Border Width="64"
+                                                                    Height="64"
+                                                                    Background="#EEF2F5FA"
+                                                                    BorderBrush="#52FFFFFF"
                                                                     BorderThickness="1"
-                                                                    CornerRadius="10">
-                                                                <TextBlock HorizontalAlignment="Center"
-                                                                           VerticalAlignment="Center"
-                                                                           FontSize="12"
-                                                                           FontWeight="Bold"
-                                                                           Foreground="#DDEBFAFF"
-                                                                           Text="{Binding ExtensionLabel}" />
+                                                                    CornerRadius="17">
+                                                                <Border.Style>
+                                                                    <Style TargetType="Border">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding VisualPresentation}"
+                                                                                         Value="{x:Static visuals:FileVisualPresentation.FullBleed}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Border.Style>
                                                             </Border>
-                                                            <Image Width="58"
-                                                                   Height="62"
+                                                            <TextBlock HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center"
+                                                                       FontSize="12"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="#A33A4960"
+                                                                       Text="{Binding ExtensionLabel}">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding VisualPresentation}"
+                                                                                         Value="{x:Static visuals:FileVisualPresentation.Contained}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding VisualPresentation}"
+                                                                                         Value="{x:Static visuals:FileVisualPresentation.FullBleed}">
+                                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <Image HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
                                                                    Loaded="FileVisual_OnLoaded"
                                                                    RenderOptions.BitmapScalingMode="HighQuality"
                                                                    SizeChanged="FileVisual_OnSizeChanged"
-                                                                   Source="{Binding Visual}"
-                                                                   Stretch="Uniform" />
+                                                                   Source="{Binding Visual}">
+                                                                <Image.Style>
+                                                                    <Style TargetType="Image">
+                                                                        <Setter Property="Width" Value="64" />
+                                                                        <Setter Property="Height" Value="64" />
+                                                                        <Setter Property="Stretch" Value="Uniform" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding VisualPresentation}"
+                                                                                         Value="{x:Static visuals:FileVisualPresentation.Contained}">
+                                                                                <Setter Property="Width" Value="44" />
+                                                                                <Setter Property="Height" Value="44" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding VisualPresentation}"
+                                                                                         Value="{x:Static visuals:FileVisualPresentation.FullBleed}">
+                                                                                <Setter Property="Stretch" Value="UniformToFill" />
+                                                                                <Setter Property="Clip">
+                                                                                    <Setter.Value>
+                                                                                        <RectangleGeometry Rect="0,0,64,64"
+                                                                                                           RadiusX="17"
+                                                                                                           RadiusY="17" />
+                                                                                    </Setter.Value>
+                                                                                </Setter>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Image.Style>
+                                                            </Image>
                                                         </Grid>
                                                         <TextBlock Margin="0,8,0,0"
                                                                    HorizontalAlignment="Center"

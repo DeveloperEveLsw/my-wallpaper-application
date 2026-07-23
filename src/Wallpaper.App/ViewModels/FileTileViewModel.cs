@@ -1,5 +1,5 @@
 using System.IO;
-using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Wallpaper.Core.Models;
 using Wallpaper.Infrastructure.Windows.Visuals;
 
@@ -13,9 +13,10 @@ public sealed class FileTileViewModel(
     private readonly string _absolutePath = absolutePath;
     private readonly IFileVisualService _visualService = visualService;
     private readonly SemaphoreSlim _visualLoadGate = new(1, 1);
-    private ImageSource? _visual;
+    private BitmapSource? _visual;
     private int _loadedPixelWidth;
-    private bool _visualIsThumbnail;
+    private FileVisualKind? _visualKind;
+    private FileVisualPresentation _visualPresentation;
     private bool _isSelected;
 
     public DesktopFile File { get; } = file;
@@ -30,10 +31,16 @@ public sealed class FileTileViewModel(
         set => SetProperty(ref _isSelected, value);
     }
 
-    public ImageSource? Visual
+    public BitmapSource? Visual
     {
         get => _visual;
         private set => SetProperty(ref _visual, value);
+    }
+
+    public FileVisualPresentation VisualPresentation
+    {
+        get => _visualPresentation;
+        private set => SetProperty(ref _visualPresentation, value);
     }
 
     public string ExtensionLabel
@@ -76,9 +83,9 @@ public sealed class FileTileViewModel(
                 _absolutePath,
                 targetPixelWidth,
                 cancellationToken);
-            if (shellIcon is not null && !_visualIsThumbnail)
+            if (shellIcon is not null && _visualKind is not FileVisualKind.Thumbnail)
             {
-                Visual = shellIcon;
+                ApplyVisual(shellIcon);
             }
 
             var thumbnail = await _visualService.LoadThumbnailAsync(
@@ -88,8 +95,7 @@ public sealed class FileTileViewModel(
                 cancellationToken);
             if (thumbnail is not null)
             {
-                Visual = thumbnail;
-                _visualIsThumbnail = true;
+                ApplyVisual(thumbnail);
             }
 
             _loadedPixelWidth = targetPixelWidth;
@@ -109,5 +115,12 @@ public sealed class FileTileViewModel(
         {
             _visualLoadGate.Release();
         }
+    }
+
+    private void ApplyVisual(FileVisualResult visual)
+    {
+        _visualKind = visual.Kind;
+        VisualPresentation = visual.Presentation;
+        Visual = visual.Source;
     }
 }

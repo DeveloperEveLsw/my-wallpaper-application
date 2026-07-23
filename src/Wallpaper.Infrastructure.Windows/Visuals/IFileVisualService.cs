@@ -1,18 +1,17 @@
 #if WINDOWS
-using System.Windows.Media;
 using Wallpaper.Core.Models;
 
 namespace Wallpaper.Infrastructure.Windows.Visuals;
 
 public interface IFileVisualService
 {
-    Task<ImageSource?> LoadShellIconAsync(
+    Task<FileVisualResult?> LoadShellIconAsync(
         DesktopFile file,
         string absolutePath,
         int targetPixelWidth,
         CancellationToken cancellationToken = default);
 
-    Task<ImageSource?> LoadThumbnailAsync(
+    Task<FileVisualResult?> LoadThumbnailAsync(
         DesktopFile file,
         string absolutePath,
         int targetPixelWidth,
