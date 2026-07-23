@@ -11,7 +11,7 @@ metadata:
     - desktop
     - m0
   appTargetVersion: [2, 8, 0]
-instances: ReplicaByMonitor
+instances: Single
 loader: ThirdParty
 preset: Desktop
 html: !include index.html

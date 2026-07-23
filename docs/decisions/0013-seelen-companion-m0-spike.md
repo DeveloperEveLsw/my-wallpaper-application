@@ -1,6 +1,6 @@
 # ADR 0013: Seelen UI 위젯 + .NET Companion M0 스파이크
 
-- 상태: 실험 중
+- 상태: 승인됨
 - 결정일: 2026-07-24
 - 적용 범위: M0 기술 검증 코드와 판정 게이트
 
@@ -57,19 +57,26 @@ nonce를 전송한다.
 실제 루트는 `Environment.SpecialFolder.DesktopDirectory`를 통해 확인한다. Companion은
 Explorer 바탕 화면 아이콘 표시 설정을 변경·감시·복원하지 않는다.
 
-## M0 한계
+## M0 한계와 인수한 위험
 
 - 파일 스캔, watcher, 파일 명령과 제품 UI 이식은 M1 이후 범위다.
 - M0 HTTP 응답은 통신 경계 검증용 내장 PNG 두 개뿐이다.
 - 포트 범위는 기술 스파이크용 고정 allowlist이며 제품 확정값이 아니다.
 - 현재 사용자 전용 named pipe는 동일 사용자 세션 내부 부트스트랩 전달만 담당한다.
-- Seelen 실기기 항목을 모두 통과하기 전에는 이 구조를 제품 기본 경로로 선언하지 않는다.
+- 절전 복귀, 전 DPI 조합, 실제 포트 충돌, 방화벽 prompt와 redirected Desktop은
+  M0 종료 시점에 미수행 위험으로 남아 있으며 제품화 전에 다시 검증한다.
+- Desktop 위젯은 최종 M0 결정에 따라 모니터별 복제가 아닌 `Single` 인스턴스를 쓴다.
 
 ## 결과
 
-M0가 통과하면 M1에서 기존 Core 및 Windows 파일 서비스의 Companion 쪽 재사용 경계를
-설계한다. 통과 전에는 Wallpaper Engine, WPF WebView2 및 three.js 파일을 물리적으로
-삭제하지 않는다.
+2026-07-24 M0를 통과로 종료했다. Desktop/Popup 입력, Seelen `Run`, 싱글턴 Companion,
+인증된 loopback WebSocket/HTTP Blob, exact Origin/Host, 실제 Desktop root, 수동
+재연결과 사용자 리소스 폴더 영구 설치를 Windows Seelen 2.8에서 확인했다. 초기 손상
+PNG와 세션 전용 리소스 등록 문제는 수정·재검증했다.
+
+M1에서는 기존 Core 및 Windows 파일 서비스의 Companion 쪽 재사용 경계를 설계할 수
+있다. 기존 Wallpaper Engine, WPF WebView2 및 three.js 파일 삭제는 이번 M0 종료에
+포함되지 않으며 별도 변경으로만 수행한다.
 
 검수 항목과 현재 결과는 [M0 검수 기록](../m0-seelen-validation.md)에 둔다.
 
