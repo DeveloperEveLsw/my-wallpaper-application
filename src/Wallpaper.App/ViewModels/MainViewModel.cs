@@ -1607,7 +1607,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private CardViewModel CreateRootFilesCard(IEnumerable<DesktopFile> files, string rootPath) => new(
         "virtual:root-files",
-        "…",
+        "루트",
         relativePath: null,
         isVirtual: true,
         CreateFileTiles(rootPath, files));

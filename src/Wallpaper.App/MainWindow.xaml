@@ -221,7 +221,7 @@
 
             <Border Width="760"
                     Height="470"
-                    Margin="28,28,28,206"
+                    Margin="28,28,28,238"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Bottom"
                     Padding="22"
@@ -385,19 +385,11 @@
                 </Grid>
             </Border>
 
-            <Border x:Name="DockContainer"
-                    Margin="20,0,20,64"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Bottom"
-                    Padding="12,10"
-                    Background="#C91B2334"
-                    BorderBrush="#5CFFFFFF"
-                    BorderThickness="1"
-                    CornerRadius="28">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="28" Opacity="0.38" ShadowDepth="10" />
-                </Border.Effect>
-                <Grid>
+            <Grid x:Name="DockContainer"
+                  Margin="20,0,20,96"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Bottom">
+                <Grid Margin="12,10">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -537,30 +529,36 @@
 
                     <Button Grid.Column="2"
                             AutomationProperties.AutomationId="{Binding Id}"
+                            AutomationProperties.Name="루트 파일"
                             Command="{Binding DataContext.OpenCardCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             CommandParameter="{Binding}"
                             DataContext="{Binding RootFilesCard}"
-                            Style="{StaticResource CardButtonStyle}">
+                            Style="{StaticResource CardButtonStyle}"
+                            ToolTip="루트 파일">
                         <Grid>
                             <StackPanel>
-                                <Border Width="58"
-                                        Height="58"
-                                        HorizontalAlignment="Center"
-                                        Background="#16FFFFFF"
-                                        BorderBrush="#52FFFFFF"
-                                        BorderThickness="1"
-                                        CornerRadius="18">
-                                    <TextBlock HorizontalAlignment="Center"
-                                               VerticalAlignment="Center"
-                                               FontFamily="Segoe UI Variable Display"
-                                               FontSize="32"
-                                               FontWeight="Light"
-                                               Text="…" />
-                                </Border>
+                                <Grid Width="58"
+                                      Height="58"
+                                      HorizontalAlignment="Center">
+                                    <StackPanel HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Orientation="Horizontal">
+                                        <Ellipse Width="8"
+                                                 Height="8"
+                                                 Fill="#ECA4C7FF" />
+                                        <Ellipse Width="8"
+                                                 Height="8"
+                                                 Margin="6,0"
+                                                 Fill="#ECA4C7FF" />
+                                        <Ellipse Width="8"
+                                                 Height="8"
+                                                 Fill="#ECA4C7FF" />
+                                    </StackPanel>
+                                </Grid>
                                 <TextBlock Margin="0,5,0,0"
                                            HorizontalAlignment="Center"
                                            FontSize="12"
-                                           Text="…" />
+                                           Text="{Binding Name}" />
                                 <Border Style="{StaticResource OpenCardIndicatorStyle}" />
                             </StackPanel>
                             <Border Padding="6"
@@ -612,7 +610,7 @@
                         </Grid>
                     </Button>
                 </Grid>
-            </Border>
+            </Grid>
         </Grid>
 
         <!-- Transient Layer: item commands, native Shell entry point, and file move UI. -->
