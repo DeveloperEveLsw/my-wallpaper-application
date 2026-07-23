@@ -30,6 +30,11 @@ public sealed class DesktopProjectionServiceTests : IDisposable
         Assert.Equal(2, snapshot.LooseFiles.Files.Count);
         Assert.Contains(snapshot.LooseFiles.Files, file => file.ThumbnailPath is not null);
         Assert.All(snapshot.LooseFiles.Files, file => Assert.StartsWith("/visual/icon/", file.IconPath));
+        var note = Assert.Single(snapshot.LooseFiles.Files, file => file.Name == "note.txt");
+        Assert.True(service.TryGetFile(note.Id, out var target));
+        Assert.NotNull(target);
+        Assert.Equal(snapshot.RootPath, target.RootPath);
+        Assert.Equal(Path.Combine(snapshot.RootPath, "note.txt"), target.AbsolutePath);
     }
 
     [Fact]
@@ -111,6 +116,39 @@ public sealed class DesktopProjectionServiceTests : IDisposable
             Assert.Contains(
                 service.Current.LooseFiles.Files,
                 file => file.Name == "alternate.txt");
+        }
+        finally
+        {
+            Directory.Delete(alternate, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task UseDefaultRoot_ClearsTheCustomRootAndPersistsTheDefaultChoice()
+    {
+        Directory.CreateDirectory(_testRoot);
+        var alternate = Path.Combine(
+            Path.GetTempPath(),
+            $"wallpaper-seelen-alternate-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(alternate);
+        try
+        {
+            await using (var first = CreateService())
+            {
+                await first.InitializeAsync();
+                Assert.True(await first.SetRootPathAsync(alternate));
+                Assert.True(first.Current.RootConfigured);
+
+                Assert.True(await first.UseDefaultRootAsync());
+
+                Assert.False(first.Current.RootConfigured);
+                Assert.Equal(Path.GetFullPath(_testRoot), first.Current.RootPath);
+            }
+
+            await using var second = CreateService();
+            await second.InitializeAsync();
+            Assert.False(second.Current.RootConfigured);
+            Assert.Equal(Path.GetFullPath(_testRoot), second.Current.RootPath);
         }
         finally
         {

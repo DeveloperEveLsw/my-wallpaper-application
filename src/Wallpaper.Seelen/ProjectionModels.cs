@@ -33,6 +33,7 @@ public sealed record ProjectionWarning(string RelativePath, string Code);
 
 public sealed record ProjectionFileTarget(
     string Id,
+    string RootPath,
     string AbsolutePath,
     ProjectionFile File);
 

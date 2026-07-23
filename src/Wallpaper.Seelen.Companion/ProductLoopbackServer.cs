@@ -7,11 +7,14 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Primitives;
+using Wallpaper.Core.FileOperations;
+using Wallpaper.Infrastructure.Windows.FileOperations;
+
 namespace Wallpaper.Seelen.Companion;
 
 internal sealed class ProductLoopbackServer : IAsyncDisposable
 {
-    private const int ProtocolVersion = 2;
+    private const int ProtocolVersion = 3;
     private const int MaximumIncomingBytes = 256 * 1024;
 
     private ProductLoopbackServer(WebApplication application, int port)
@@ -29,7 +32,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         SessionRegistry sessions,
         DesktopProjectionService projection,
         WindowsVisualResponseService visuals,
-        WindowsFolderPickerService folderPicker,
+        IFileCommandService fileCommands,
         CancellationToken cancellationToken)
     {
         foreach (var port in options.CandidatePorts)
@@ -44,7 +47,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 sessions,
                 projection,
                 visuals,
-                folderPicker);
+                fileCommands);
             try
             {
                 await application.StartAsync(cancellationToken);
@@ -66,7 +69,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         SessionRegistry sessions,
         DesktopProjectionService projection,
         WindowsVisualResponseService visuals,
-        WindowsFolderPickerService folderPicker)
+        IFileCommandService fileCommands)
     {
         var builder = WebApplication.CreateSlimBuilder(
             new WebApplicationOptions
@@ -189,7 +192,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 context,
                 sessions,
                 projection,
-                folderPicker,
+                fileCommands,
                 port));
         return application;
     }
@@ -198,7 +201,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         HttpContext context,
         SessionRegistry sessions,
         DesktopProjectionService projection,
-        WindowsFolderPickerService folderPicker,
+        IFileCommandService fileCommands,
         int port)
     {
         var origin = GetSingleHeader(context.Request.Headers, "Origin");
@@ -234,7 +237,13 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 });
             void OnSnapshotChanged(object? _, ProjectionSnapshot snapshot) =>
                 outgoing.Writer.TryWrite(
-                    SerializeJson(new { type = "snapshot", snapshot }));
+                    SerializeJson(
+                        new
+                        {
+                            type = "snapshot",
+                            snapshot,
+                            watch = projection.WatchStatus,
+                        }));
             projection.SnapshotChanged += OnSnapshotChanged;
             try
             {
@@ -256,7 +265,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                     socket,
                     session.Token,
                     projection,
-                    folderPicker,
+                    fileCommands,
                     outgoing.Writer,
                     connection.Token);
                 var sendTask = SendOutgoingAsync(socket, outgoing.Reader, connection.Token);
@@ -292,7 +301,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         WebSocket socket,
         string sessionToken,
         DesktopProjectionService projection,
-        WindowsFolderPickerService folderPicker,
+        IFileCommandService fileCommands,
         ChannelWriter<byte[]> outgoing,
         CancellationToken cancellationToken)
     {
@@ -343,29 +352,97 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 && rootPathElement.GetString() is { } rootPath)
             {
                 var accepted = await projection.SetRootPathAsync(rootPath, cancellationToken);
-                outgoing.TryWrite(SerializeJson(new { type = "setRootAck", accepted }));
-            }
-            else if (type == "chooseRoot")
-            {
-                var selected = await folderPicker.PickAsync(
-                    projection.Current.RootPath,
-                    cancellationToken);
-                var accepted = selected is not null
-                    && await projection.SetRootPathAsync(selected, cancellationToken);
                 outgoing.TryWrite(
                     SerializeJson(
                         new
                         {
-                            type = "chooseRootAck",
+                            type = "setRootAck",
+                            rootPath,
                             accepted,
-                            canceled = selected is null,
-                            rootPath = accepted ? selected : null,
                         }));
+            }
+            else if (type == "useDefaultRoot")
+            {
+                var accepted = await projection.UseDefaultRootAsync(cancellationToken);
+                outgoing.TryWrite(
+                    SerializeJson(
+                        new
+                        {
+                            type = "useDefaultRootAck",
+                            accepted,
+                        }));
+            }
+            else if (type == "openFile"
+                && root.TryGetProperty("fileId", out var fileIdElement)
+                && fileIdElement.GetString() is { } fileId)
+            {
+                await OpenFileAsync(
+                    fileId,
+                    projection,
+                    fileCommands,
+                    outgoing,
+                    cancellationToken);
             }
             else
             {
                 outgoing.TryWrite(SerializeJson(new { type = "error", code = "invalid_message" }));
             }
+        }
+    }
+
+    private static async Task OpenFileAsync(
+        string fileId,
+        DesktopProjectionService projection,
+        IFileCommandService fileCommands,
+        ChannelWriter<byte[]> outgoing,
+        CancellationToken cancellationToken)
+    {
+        if (!projection.TryGetFile(fileId, out var target) || target is null)
+        {
+            outgoing.TryWrite(
+                SerializeJson(
+                    new
+                    {
+                        type = "openFileAck",
+                        fileId,
+                        accepted = false,
+                        code = "target_missing",
+                        message = "선택한 파일이 더 이상 현재 목록에 없습니다.",
+                    }));
+            return;
+        }
+
+        try
+        {
+            await fileCommands.OpenAsync(
+                new FileCommandTarget(
+                    target.RootPath,
+                    target.File.RelativePath,
+                    FileCommandItemKind.File),
+                cancellationToken);
+            outgoing.TryWrite(
+                SerializeJson(
+                    new
+                    {
+                        type = "openFileAck",
+                        fileId,
+                        accepted = true,
+                        code = (string?)null,
+                        message = (string?)null,
+                    }));
+        }
+        catch (FileCommandException exception)
+        {
+            outgoing.TryWrite(
+                SerializeJson(
+                    new
+                    {
+                        type = "openFileAck",
+                        fileId,
+                        accepted = false,
+                        code = exception.Error.ToString(),
+                        message = exception.Message,
+                    }));
         }
     }
 

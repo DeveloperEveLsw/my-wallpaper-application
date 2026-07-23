@@ -1,14 +1,23 @@
-import { invoke, SeelenCommand, Widget } from "@seelen-ui/lib";
+import {
+  invoke,
+  SeelenCommand,
+  SeelenEvent,
+  Settings,
+  subscribe,
+  UIColors,
+  Widget,
+} from "@seelen-ui/lib";
 import { currentMonitor } from "@tauri-apps/api/window";
 
 const EXPECTED_ORIGIN = "http://tauri.localhost";
 const PORT_START = 43127;
 const PORT_COUNT = 9;
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 const TILE_WIDTH = 128;
 const TILE_GAP = 8;
 const TILE_ROW_HEIGHT = 130;
 const OVERSCAN_ROWS = 3;
+const ROOT_SYNC_DELAY = 450;
 const TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   hour: "2-digit",
   hour12: false,
@@ -25,17 +34,15 @@ const widget = Widget.self;
 const dock = document.getElementById("dock");
 const dockFolders = document.getElementById("dock-folders");
 const dockLoose = document.getElementById("dock-loose");
-const panel = document.getElementById("settings-panel");
+const errorPanel = document.getElementById("error-panel");
+const errorTitle = document.getElementById("error-title");
+const errorMessage = document.getElementById("error-message");
+const retryButton = document.getElementById("retry-button");
 const modal = document.getElementById("file-modal");
 const list = document.getElementById("file-list");
 const spacer = document.getElementById("file-list-spacer");
 const rows = document.getElementById("file-list-rows");
 const emptyFiles = document.getElementById("file-empty");
-const status = document.getElementById("connection-status");
-const rootPath = document.getElementById("root-path");
-const rootName = document.getElementById("root-name");
-const watchStatus = document.getElementById("watch-status");
-const statusMessage = document.getElementById("status-message");
 
 let socket = null;
 let sessionToken = null;
@@ -45,38 +52,36 @@ let activeFiles = [];
 let generation = 0;
 let reconnectTimer = null;
 let pingTimer = null;
-let settingsHoverTimer = null;
+let rootSyncTimer = null;
 let draggedFolderId = null;
+let widgetPhysicalRect = null;
+let lastGlobalCursor = null;
+let ignoringCursorEvents = false;
+let cursorEventChange = Promise.resolve();
+let desiredRootConfiguration = {
+  customRootPath: "",
+  useDefaultDesktop: true,
+};
+let activeIssue = null;
 const visualUrls = new Map();
+const issues = new Map();
 
 await widget.init({
   saveAndRestoreLastRect: false,
   useThemes: false,
 });
 await fitWidgetToWorkArea();
+await initializeSettings();
 bindUi();
 updateClock();
 setInterval(updateClock, 1000);
 await widget.ready();
+await enableLayeredInputRouting();
 void reconnect("초기 연결");
 
 function bindUi() {
-  const trigger = document.getElementById("settings-trigger");
-  trigger.addEventListener("pointerenter", () => {
-    clearTimeout(settingsHoverTimer);
-    settingsHoverTimer = setTimeout(() => {
-      openSettings();
-    }, 1000);
-  });
-  trigger.addEventListener("pointerleave", () => clearTimeout(settingsHoverTimer));
-  document.getElementById("settings-close").addEventListener("click", () => {
-    closeSettings();
-  });
-  document.getElementById("refresh-button").addEventListener("click", () => {
-    sendAuthenticated({ type: "refresh" });
-  });
-  document.getElementById("root-choose").addEventListener("click", () => {
-    sendAuthenticated({ type: "chooseRoot" });
+  retryButton.addEventListener("click", () => {
+    activeIssue?.retry?.();
   });
   document.getElementById("modal-close").addEventListener("click", closeModal);
   modal.addEventListener("pointerdown", (event) => {
@@ -84,22 +89,8 @@ function bindUi() {
       closeModal();
     }
   });
-  document.addEventListener("pointerdown", (event) => {
-    if (
-      !panel.hidden
-      && !panel.contains(event.target)
-      && !trigger.contains(event.target)
-    ) {
-      closeSettings();
-    }
-  });
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") {
-      return;
-    }
-    if (!panel.hidden) {
-      closeSettings();
-    } else if (!modal.hidden) {
+    if (event.key === "Escape" && !modal.hidden) {
       closeModal();
     }
   });
@@ -109,17 +100,11 @@ function bindUi() {
       updateVirtualGrid();
     }
   });
-}
-
-function openSettings() {
-  clearTimeout(settingsHoverTimer);
-  closeModal();
-  panel.hidden = false;
-}
-
-function closeSettings() {
-  clearTimeout(settingsHoverTimer);
-  panel.hidden = true;
+  document.addEventListener("contextmenu", (event) => {
+    if (isInteractiveElement(event.target)) {
+      event.preventDefault();
+    }
+  });
 }
 
 async function fitWidgetToWorkArea() {
@@ -129,6 +114,12 @@ async function fitWidgetToWorkArea() {
   }
 
   const { position, size } = monitor.workArea;
+  widgetPhysicalRect = {
+    height: size.height,
+    width: size.width,
+    x: position.x,
+    y: position.y,
+  };
   await widget.setPosition({
     left: position.x,
     top: position.y,
@@ -137,10 +128,227 @@ async function fitWidgetToWorkArea() {
   });
 }
 
+async function initializeSettings() {
+  try {
+    const colors = await UIColors.getAsync();
+    colors.setAsCssVariables();
+    await UIColors.onChange((nextColors) => {
+      nextColors.setAsCssVariables();
+    });
+  } catch (error) {
+    console.warn("Seelen 강조색을 불러오지 못했습니다.", error);
+  }
+
+  try {
+    const settings = await Settings.getAsync();
+    applyWidgetSettings(settings.getCurrentWidgetConfig());
+    await Settings.onChange((nextSettings) => {
+      applyWidgetSettings(nextSettings.getCurrentWidgetConfig());
+      scheduleRootSynchronization();
+    });
+  } catch (error) {
+    setIssue(
+      "settings",
+      createIssue(
+        95,
+        "Seelen 설정을 불러오지 못했습니다.",
+        error instanceof Error ? error.message : String(error),
+        () => globalThis.location.reload(),
+      ),
+    );
+    console.warn("위젯 설정을 불러오지 못했습니다.", error);
+  }
+}
+
+function applyWidgetSettings(config) {
+  const customColor = config.useCustomFolderColor
+    && typeof config.customFolderColor === "string"
+    && CSS.supports("color", config.customFolderColor)
+    ? config.customFolderColor
+    : null;
+  document.documentElement.style.setProperty(
+    "--folder-accent-source",
+    customColor ?? "var(--system-accent-color, #b7659d)",
+  );
+  desiredRootConfiguration = {
+    customRootPath: typeof config.customRootPath === "string"
+      ? config.customRootPath.trim()
+      : "",
+    useDefaultDesktop: config.useDefaultDesktop !== false,
+  };
+}
+
+async function enableLayeredInputRouting() {
+  if (!widgetPhysicalRect) {
+    return;
+  }
+
+  try {
+    await widget.window.setIgnoreCursorEvents(true);
+    ignoringCursorEvents = true;
+    await subscribe(SeelenEvent.GlobalMouseMove, (event) => {
+      routeGlobalCursor(event.payload);
+    });
+    routeGlobalCursor(await invoke(SeelenCommand.GetMousePosition));
+  } catch (error) {
+    ignoringCursorEvents = false;
+    try {
+      await widget.window.setIgnoreCursorEvents(false);
+    } catch {
+      // Keep the original initialization error as the actionable diagnostic.
+    }
+    console.warn("바탕화면 입력 투과를 초기화하지 못했습니다.", error);
+  }
+}
+
+function routeGlobalCursor(payload) {
+  if (
+    !widgetPhysicalRect
+    || !Array.isArray(payload)
+    || payload.length !== 2
+  ) {
+    return;
+  }
+
+  const [mouseX, mouseY] = payload;
+  lastGlobalCursor = [mouseX, mouseY];
+  const {
+    height,
+    width,
+    x: windowX,
+    y: windowY,
+  } = widgetPhysicalRect;
+  const isInsideWindow = mouseX >= windowX
+    && mouseX <= windowX + width
+    && mouseY >= windowY
+    && mouseY <= windowY + height;
+  if (!isInsideWindow) {
+    setCursorEventsIgnored(true);
+    return;
+  }
+
+  const localX = (mouseX - windowX) / globalThis.devicePixelRatio;
+  const localY = (mouseY - windowY) / globalThis.devicePixelRatio;
+  const element = document.elementFromPoint(localX, localY);
+  setCursorEventsIgnored(!isInteractiveElement(element));
+}
+
+function rerouteLastCursor() {
+  if (lastGlobalCursor) {
+    queueMicrotask(() => routeGlobalCursor(lastGlobalCursor));
+  }
+}
+
+function isInteractiveElement(element) {
+  return element instanceof Element
+    && element.closest("#dock, #error-panel, .file-modal") !== null;
+}
+
+function setCursorEventsIgnored(ignored) {
+  if (ignoringCursorEvents === ignored) {
+    return;
+  }
+
+  ignoringCursorEvents = ignored;
+  cursorEventChange = cursorEventChange
+    .then(() => widget.window.setIgnoreCursorEvents(ignored))
+    .catch((error) => {
+      console.warn("위젯 입력 투과 상태를 바꾸지 못했습니다.", error);
+    });
+}
+
 function updateClock() {
   const now = new Date();
   document.getElementById("clock-time").textContent = TIME_FORMATTER.format(now);
   document.getElementById("clock-date").textContent = DATE_FORMATTER.format(now);
+}
+
+function createIssue(priority, title, message, retry) {
+  return { message, priority, retry, title };
+}
+
+function setIssue(key, issue) {
+  if (issue) {
+    issues.set(key, issue);
+  } else {
+    issues.delete(key);
+  }
+
+  const nextIssue = [...issues.values()]
+    .sort((left, right) => right.priority - left.priority)[0] ?? null;
+  activeIssue = nextIssue;
+  if (!nextIssue) {
+    errorPanel.hidden = true;
+    rerouteLastCursor();
+    return;
+  }
+
+  errorTitle.textContent = nextIssue.title;
+  errorMessage.textContent = nextIssue.message;
+  retryButton.hidden = typeof nextIssue.retry !== "function";
+  errorPanel.hidden = false;
+  rerouteLastCursor();
+}
+
+function scheduleRootSynchronization() {
+  clearTimeout(rootSyncTimer);
+  rootSyncTimer = setTimeout(() => {
+    rootSyncTimer = null;
+    synchronizeRootConfiguration();
+  }, ROOT_SYNC_DELAY);
+}
+
+function synchronizeRootConfiguration(force = false) {
+  if (!sessionToken || socket?.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  if (desiredRootConfiguration.useDefaultDesktop) {
+    if (!force && snapshot?.rootConfigured === false) {
+      setIssue("root-configuration", null);
+      return;
+    }
+
+    sendAuthenticated({ type: "useDefaultRoot" });
+    return;
+  }
+
+  const path = desiredRootConfiguration.customRootPath;
+  if (!path) {
+    setIssue(
+      "root-configuration",
+      createIssue(
+        90,
+        "사용자 지정 루트 경로가 비어 있습니다.",
+        "Seelen의 Wallpaper 데스크톱 설정에서 Windows 절대 경로를 입력하세요.",
+        () => synchronizeRootConfiguration(true),
+      ),
+    );
+    return;
+  }
+
+  if (!force && snapshot?.rootConfigured && sameWindowsPath(snapshot.rootPath, path)) {
+    setIssue("root-configuration", null);
+    return;
+  }
+
+  sendAuthenticated({ type: "setRoot", rootPath: path });
+}
+
+function sameWindowsPath(left, right) {
+  return normalizeWindowsPath(left) === normalizeWindowsPath(right);
+}
+
+function normalizeWindowsPath(path) {
+  return typeof path === "string"
+    ? path.trim().replace(/[\\/]+$/u, "").toLocaleLowerCase("en-US")
+    : "";
+}
+
+function retryRefresh() {
+  if (!sendAuthenticated({ type: "refresh" })) {
+    void reconnect("수동 재연결");
+  }
 }
 
 async function reconnect(reason) {
@@ -148,7 +356,7 @@ async function reconnect(reason) {
   clearTimeout(reconnectTimer);
   clearInterval(pingTimer);
   closeSocket();
-  setConnection(`${reason}…`, "pending");
+  setIssue("connection", null);
 
   try {
     if (window.location.origin !== EXPECTED_ORIGIN) {
@@ -191,19 +399,24 @@ async function reconnect(reason) {
     socket = connection.socket;
     sessionToken = connection.hello.sessionToken;
     httpBaseUrl = connection.hello.httpBaseUrl;
-    rootPath.textContent = connection.hello.desktopRoot;
-    rootPath.title = connection.hello.desktopRoot;
     updateWatch(connection.hello.watch);
     applySnapshot(connection.hello.snapshot);
     adoptSocket(currentGeneration);
-    setConnection("연결됨", "ok");
+    synchronizeRootConfiguration();
   } catch (error) {
     if (currentGeneration !== generation) {
       return;
     }
 
-    setConnection("연결 실패", "error");
-    statusMessage.textContent = error instanceof Error ? error.message : String(error);
+    setIssue(
+      "connection",
+      createIssue(
+        100,
+        "Companion에 연결하지 못했습니다.",
+        error instanceof Error ? error.message : String(error),
+        () => void reconnect("수동 재연결"),
+      ),
+    );
     if (!(error instanceof TerminalError)) {
       reconnectTimer = setTimeout(() => void reconnect("연결 복구"), 2500);
     }
@@ -318,17 +531,78 @@ function adoptSocket(currentGeneration) {
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "snapshot") {
+      updateWatch(message.watch);
       applySnapshot(message.snapshot);
     } else if (message.type === "setRootAck" && !message.accepted) {
-      statusMessage.textContent = "루트 경로를 읽을 수 없습니다.";
-    } else if (message.type === "chooseRootAck" && !message.accepted && !message.canceled) {
-      statusMessage.textContent = "선택한 루트 경로를 읽을 수 없습니다.";
+      if (
+        !desiredRootConfiguration.useDefaultDesktop
+        && sameWindowsPath(message.rootPath, desiredRootConfiguration.customRootPath)
+      ) {
+        setIssue(
+          "root-configuration",
+          createIssue(
+            90,
+            "루트 폴더를 사용할 수 없습니다.",
+            "Seelen 설정의 사용자 지정 루트 경로와 접근 권한을 확인하세요.",
+            () => synchronizeRootConfiguration(true),
+          ),
+        );
+      }
+    } else if (message.type === "useDefaultRootAck" && !message.accepted) {
+      if (desiredRootConfiguration.useDefaultDesktop) {
+        setIssue(
+          "root-configuration",
+          createIssue(
+            90,
+            "기본 Desktop 폴더를 사용할 수 없습니다.",
+            "Windows Desktop 폴더의 위치와 접근 권한을 확인하세요.",
+            () => synchronizeRootConfiguration(true),
+          ),
+        );
+      }
+    } else if (message.type === "openFileAck") {
+      if (message.accepted) {
+        setIssue("command", null);
+      } else {
+        setIssue(
+          "command",
+          createIssue(
+            60,
+            "파일을 열지 못했습니다.",
+            message.message || "파일이 이동되었거나 기본 연결 프로그램을 사용할 수 없습니다.",
+            () => {
+              setIssue("command", null);
+              sendAuthenticated({ type: "openFile", fileId: message.fileId });
+            },
+          ),
+        );
+      }
     } else if (message.type === "error") {
-      statusMessage.textContent = `Companion 오류: ${message.code}`;
+      setIssue(
+        "command",
+        createIssue(
+          60,
+          "Companion 명령을 처리하지 못했습니다.",
+          `오류 코드: ${message.code}`,
+          () => {
+            setIssue("command", null);
+            retryRefresh();
+          },
+        ),
+      );
     }
   });
   socket.addEventListener("close", () => {
     if (currentGeneration === generation) {
+      setIssue(
+        "connection",
+        createIssue(
+          100,
+          "Companion 연결이 끊겼습니다.",
+          "자동으로 다시 연결하는 중입니다.",
+          () => void reconnect("수동 재연결"),
+        ),
+      );
       reconnectTimer = setTimeout(() => void reconnect("연결 복구"), 1000);
     }
   });
@@ -343,14 +617,16 @@ function applySnapshot(nextSnapshot) {
   }
 
   snapshot = nextSnapshot;
-  if (snapshot.rootConfigured === false) {
-    openSettings();
-  }
   pruneVisualUrls();
-  rootPath.textContent = snapshot.rootPath || "선택되지 않음";
-  rootPath.title = snapshot.rootPath || "선택되지 않음";
-  rootName.textContent = snapshot.rootName || "루트 미설정";
-  statusMessage.textContent = getSnapshotStatusText(snapshot);
+  updateSnapshotIssue(snapshot);
+  if (
+    desiredRootConfiguration.useDefaultDesktop
+      ? snapshot.rootConfigured === false
+      : snapshot.rootConfigured
+        && sameWindowsPath(snapshot.rootPath, desiredRootConfiguration.customRootPath)
+  ) {
+    setIssue("root-configuration", null);
+  }
   renderDock();
   if (!modal.hidden) {
     const selected = [...snapshot.folders, snapshot.looseFiles]
@@ -363,16 +639,31 @@ function applySnapshot(nextSnapshot) {
   }
 }
 
-function getSnapshotStatusText(current) {
-  if (current.message) {
-    return current.message;
+function updateSnapshotIssue(current) {
+  if (current.state === "ready" || current.state === "loading") {
+    setIssue("snapshot", null);
+    return;
   }
-  if (current.state === "ready") {
-    const fileCount = [...current.folders, current.looseFiles]
-      .reduce((total, folder) => total + folder.files.length, 0);
-    return `${current.folders.length.toLocaleString()}개 폴더 · ${fileCount.toLocaleString()}개 파일`;
-  }
-  return "파일 상태를 확인하고 있습니다.";
+
+  const descriptions = {
+    "access-denied": [
+      "루트 폴더에 접근할 수 없습니다.",
+      "Seelen 설정의 루트 경로와 Windows 폴더 권한을 확인하세요.",
+    ],
+    "root-missing": [
+      "루트 폴더를 찾을 수 없습니다.",
+      "폴더를 복원하거나 Seelen 설정에서 다른 루트 경로를 입력하세요.",
+    ],
+    warning: [
+      "일부 항목을 읽지 못했습니다.",
+      current.message || "읽을 수 없는 항목을 확인한 뒤 다시 시도하세요.",
+    ],
+  };
+  const [title, message] = descriptions[current.state] ?? [
+    "Desktop 내용을 불러오지 못했습니다.",
+    current.message || "잠시 후 다시 시도하세요.",
+  ];
+  setIssue("snapshot", createIssue(80, title, message, retryRefresh));
 }
 
 function pruneVisualUrls() {
@@ -398,7 +689,9 @@ function renderDock() {
   if (snapshot.folders.length === 0) {
     const empty = document.createElement("div");
     empty.className = "dock-empty";
-    empty.textContent = snapshot.state === "ready" ? "폴더 없음" : "불러오는 중";
+    empty.textContent = snapshot.state === "ready" || snapshot.state === "warning"
+      ? "폴더 없음"
+      : "루트 오류";
     dockFolders.append(empty);
   }
 
@@ -429,14 +722,16 @@ function createDockButton(folder) {
     : `
       <span class="folder-glyph" aria-hidden="true">
         <svg viewBox="0 0 58 58" focusable="false">
-          <path d="M4 15h18l6-7h24c2.7 0 4 1.7 4 5v34c0 3.3-1.7 5-5 5H7c-3.3 0-5-1.7-5-5V20c0-3.3.7-5 2-5Z" fill="#ECA4C7"/>
-          <path d="M7 20h44c3.3 0 5 1.7 5 5v22c0 3.3-1.7 5-5 5H7c-3.3 0-5-1.7-5-5V25c0-3.3 1.7-5 5-5Z" fill="#B7659D"/>
+          <path class="folder-glyph-back" d="M4 15h18l6-7h24c2.7 0 4 1.7 4 5v34c0 3.3-1.7 5-5 5H7c-3.3 0-5-1.7-5-5V20c0-3.3.7-5 2-5Z"/>
+          <path class="folder-glyph-front" d="M7 20h44c3.3 0 5 1.7 5 5v22c0 3.3-1.7 5-5 5H7c-3.3 0-5-1.7-5-5V25c0-3.3 1.7-5 5-5Z"/>
         </svg>
       </span>
       <span class="dock-name"></span>
       <span class="open-indicator" aria-hidden="true"></span>
     `;
-  button.querySelector(".dock-name").textContent = folder.name;
+  button.querySelector(".dock-name").textContent = folder.isLooseFiles
+    ? "루트"
+    : folder.name;
   button.addEventListener("click", () => toggleFolder(folder));
   return button;
 }
@@ -523,6 +818,7 @@ function showFolder(folder, preserveScroll) {
   updateVirtualGrid();
   updateDockSelection();
   list.focus();
+  rerouteLastCursor();
 }
 
 function closeModal() {
@@ -532,6 +828,7 @@ function closeModal() {
   rows.replaceChildren();
   emptyFiles.hidden = true;
   updateDockSelection();
+  rerouteLastCursor();
 }
 
 function updateVirtualGrid() {
@@ -565,6 +862,7 @@ function renderVisibleRows() {
 
   for (let rowIndex = firstRow; rowIndex < lastRow; rowIndex += 1) {
     const row = document.createElement("div");
+    const visualLoads = [];
     row.className = "file-grid-row";
     row.style.top = `${rowIndex * TILE_ROW_HEIGHT}px`;
     const start = rowIndex * columnCount;
@@ -576,6 +874,16 @@ function renderVisibleRows() {
       tile.className = "file-tile";
       tile.tabIndex = 0;
       tile.title = file.name;
+      tile.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        sendAuthenticated({ type: "openFile", fileId: file.id });
+      });
+      tile.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          sendAuthenticated({ type: "openFile", fileId: file.id });
+        }
+      });
 
       const visual = document.createElement("span");
       visual.className = "file-visual";
@@ -590,14 +898,29 @@ function renderVisibleRows() {
 
       const label = document.createElement("span");
       label.className = "file-name";
-      label.textContent = file.name;
+      label.textContent = getFileDisplayName(file);
       tile.append(visual, label);
       row.append(tile);
-      void loadVisual(file, { fallback, image, label, tile, visual });
+      visualLoads.push([file, { fallback, image, label, tile, visual }]);
     }
 
     rows.append(row);
+    for (const [file, elements] of visualLoads) {
+      void loadVisual(file, elements);
+    }
   }
+}
+
+function getFileDisplayName(file) {
+  if (
+    !file.extension
+    || !file.name.toLowerCase().endsWith(file.extension.toLowerCase())
+  ) {
+    return file.name;
+  }
+
+  const nameWithoutExtension = file.name.slice(0, -file.extension.length);
+  return nameWithoutExtension || file.name;
 }
 
 async function loadVisual(file, elements, requestedPath = null) {
@@ -663,14 +986,39 @@ function decodeDisplayName(encoded) {
 function sendAuthenticated(message) {
   if (socket?.readyState === WebSocket.OPEN && sessionToken) {
     socket.send(JSON.stringify({ ...message, sessionToken }));
+    return true;
   }
+  return false;
 }
 
 function updateWatch(watch) {
-  const modes = [];
-  if (watch?.contentWatching) modes.push("내용");
-  if (watch?.parentWatching) modes.push("루트");
-  watchStatus.textContent = modes.length > 0 ? `${modes.join("·")} 감시 중` : "감시 불가";
+  if (!watch) {
+    return;
+  }
+
+  if (watch.warning) {
+    setIssue(
+      "watcher",
+      createIssue(
+        70,
+        "폴더 변경 감시가 제한되었습니다.",
+        watch.warning,
+        retryRefresh,
+      ),
+    );
+  } else if (!watch.contentWatching && !watch.parentWatching) {
+    setIssue(
+      "watcher",
+      createIssue(
+        70,
+        "폴더 변경을 자동으로 감시할 수 없습니다.",
+        "변경 내용이 자동으로 반영되지 않을 수 있습니다.",
+        retryRefresh,
+      ),
+    );
+  } else {
+    setIssue("watcher", null);
+  }
 }
 
 function closeSocket() {
@@ -680,11 +1028,6 @@ function closeSocket() {
     socket.close();
     socket = null;
   }
-}
-
-function setConnection(text, state) {
-  status.textContent = text;
-  status.dataset.state = state;
 }
 
 function encodeBase64Url(bytes) {

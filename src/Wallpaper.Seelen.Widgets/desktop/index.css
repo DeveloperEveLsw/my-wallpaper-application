@@ -1,4 +1,8 @@
 :root {
+  --folder-accent-source: var(--system-accent-color, #b7659d);
+  --folder-accent: var(--folder-accent-source);
+  --folder-accent-soft: color-mix(in srgb, var(--folder-accent-source) 58%, white);
+
   color: #f7f9ff;
   font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
   color-scheme: dark;
@@ -64,7 +68,7 @@ button,
   font-size: 13px;
 }
 
-.settings-panel,
+.error-panel,
 .file-modal {
   border: 1px solid rgb(255 255 255 / 33%);
   background: rgb(26 33 49 / 90%);
@@ -115,13 +119,11 @@ button,
   gap: 18px;
 }
 
-h1,
 h2,
 p {
   margin: 0;
 }
 
-h1,
 h2 {
   overflow: hidden;
   font-size: 20px;
@@ -131,95 +133,53 @@ h2 {
   white-space: nowrap;
 }
 
-#settings-trigger {
-  position: fixed;
-  top: 0;
-  right: 0;
-  z-index: 21;
-  width: 72px;
-  height: 72px;
-  pointer-events: auto;
-}
-
-.settings-panel {
+.error-panel {
   position: fixed;
   top: 28px;
   right: 28px;
   z-index: 20;
-  width: min(390px, calc(100vw - 56px));
-  border-radius: 24px;
-  padding: 22px;
-  pointer-events: auto;
-  animation: settings-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.field-label {
-  margin-top: 24px;
-  margin-bottom: 7px;
-  color: rgb(194 210 232 / 69%);
-  font-size: 12px;
-}
-
-.root-path {
-  min-height: 44px;
-  overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 25%);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 9%);
-  padding: 11px 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.settings-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  width: min(440px, calc(100vw - 56px));
+  align-items: center;
+  gap: 18px;
+  border-color: rgb(255 156 165 / 48%);
+  border-radius: 18px;
+  padding: 16px;
+  pointer-events: auto;
+  animation: error-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.root-status {
+.error-copy {
   display: grid;
-  gap: 5px;
-  margin-top: 22px;
-  border-radius: 12px;
-  background: rgb(255 255 255 / 5%);
-  padding: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 4px;
 }
 
-#root-name {
+#error-title {
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
+  color: rgb(255 190 196 / 94%);
+  font-size: 13px;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-#status-message {
-  min-height: 16px;
+#error-message {
   color: rgb(201 215 234 / 71%);
   font-size: 12px;
   line-height: 1.45;
 }
 
-.host-status {
-  margin-top: 18px;
-  color: rgb(153 169 192 / 52%);
-  font-size: 11px;
-}
-
-#connection-status[data-state="ok"] {
-  color: rgb(153 225 181 / 72%);
-}
-
-#connection-status[data-state="error"] {
-  color: rgb(255 156 165 / 82%);
+#retry-button {
+  flex: 0 0 auto;
 }
 
 .modal-layer {
   position: fixed;
   inset: 0;
   z-index: 10;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .file-modal {
@@ -421,16 +381,26 @@ h2 {
   filter: drop-shadow(0 5px 9px rgb(15 23 42 / 20%));
 }
 
+.folder-glyph-back {
+  fill: var(--folder-accent-soft);
+}
+
+.folder-glyph-front {
+  fill: var(--folder-accent);
+}
+
 .loose-glyph {
   grid-template-columns: repeat(3, 8px);
   gap: 6px;
+  justify-content: center;
+  transform: translateY(6px);
 }
 
 .loose-glyph i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #eca4c7ff;
+  background: var(--folder-accent-soft);
 }
 
 .dock-name {
@@ -450,7 +420,7 @@ h2 {
   height: 5px;
   margin-top: 7px;
   border-radius: 3px;
-  background: rgb(184 217 255 / 92%);
+  background: var(--folder-accent-soft);
   opacity: 0;
   transform: scaleX(0.35);
   transition:
@@ -503,7 +473,7 @@ h2 {
   display: none !important;
 }
 
-@keyframes settings-in {
+@keyframes error-in {
   from {
     opacity: 0;
     transform: translateY(-8px);

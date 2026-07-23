@@ -1,3 +1,5 @@
+using Wallpaper.Infrastructure.Windows.FileOperations;
+
 namespace Wallpaper.Seelen.Companion;
 
 internal static class CompanionApplication
@@ -48,14 +50,14 @@ internal static class CompanionApplication
             await using var projection = new DesktopProjectionService(desktopRoot);
             await projection.InitializeAsync();
             var visuals = new WindowsVisualResponseService(projection);
-            var folderPicker = new WindowsFolderPickerService();
+            var fileCommands = new WindowsFileCommandService();
 
             await using var loopback = await ProductLoopbackServer.StartAsync(
                 options,
                 sessions,
                 projection,
                 visuals,
-                folderPicker,
+                fileCommands,
                 CancellationToken.None);
             var pipe = new ProductBootstrapPipe(sessions, loopback.Port);
             var pipeTask = pipe.RunServerAsync(loopback.Application.Lifetime.ApplicationStopping);

@@ -1,13 +1,36 @@
 # 기술 아키텍처
 
-- 상태: Wallpaper Engine 우선 프레젠테이션 구현 기준
-- 원칙: WPF 애플리케이션 중심, Wallpaper Engine 제품 경로, 실제 파일 시스템 우선
+- 상태: Seelen UI 제품 경로 구현 기준, Wallpaper Engine/WPF 경로 보존
+- 원칙: Seelen UI 설정·표시, .NET Companion 파일 시스템 경계, 실제 파일 시스템 우선
 
 > 2026-07-24 Seelen UI 위젯 + .NET Companion M0를 통과했고 M1·M2 제품 경로를
 > 구현했다. 새 구조는 [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md)를 따른다.
-> 아래 Wallpaper Engine/WPF 구조는 Seelen 실기기 전환 검수가 끝날 때까지 보존한다.
+> 아래 1.1 이후의 Wallpaper Engine/WPF 구조는 Seelen 실기기 전환 검수가 끝날 때까지
+> 보존한다.
 
 ## 1. 구성 개요
+
+현재 Seelen 제품 경로는 다음 경계를 사용한다.
+
+```text
+Seelen Settings ── widget config ──┐
+                                   ▼
+Wallpaper.Seelen.Widgets ── authenticated WebSocket/HTTP
+                                   │
+                                   ▼
+Wallpaper.Seelen.Companion ── projection · watcher · settings · Shell visual
+                                   │
+                                   ▼
+                           Windows File System
+```
+
+폴더 색상, 기본 Desktop 사용과 사용자 지정 루트 경로는 Seelen 위젯 설정 GUI가
+소유한다. 위젯은 루트 설정을 인증된 프로토콜로 Companion에 동기화하고, Companion은
+검증된 루트와 Dock 폴더 순서를 앱 로컬 JSON에 보존한다. 정상 연결·watcher 상태는
+표시하지 않으며 연결, watcher 또는 루트 오류 때만 위젯의 재시도 패널을 연다. 숨은
+설정 hotspot과 위젯 내부 설정 패널은 Seelen 제품 경로에 존재하지 않는다.
+
+보존된 Wallpaper Engine/WPF 경로는 다음과 같다.
 
 ```text
 Wallpaper Engine                    --dev-window

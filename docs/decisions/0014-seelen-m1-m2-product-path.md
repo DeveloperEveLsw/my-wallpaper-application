@@ -24,9 +24,18 @@ Wallpaper.Seelen.Companion (Windows)
 검증한 exact Origin/Host, HMAC bootstrap, one-time nonce와 memory-only session을
 유지한다.
 
-제품 프로토콜은 버전 2다. `helloAck`에 최초 snapshot과 watcher 상태를 싣고 이후
-파일 변경은 `snapshot` 메시지로 push한다. 폴더 순서와 루트 변경은 인증된 WebSocket
-명령으로만 받으며 설정 저장 뒤 전체 재스캔한다.
+제품 프로토콜은 버전 3이다. `helloAck`에 최초 snapshot과 watcher 상태를 싣고 이후
+파일 변경은 최신 watcher 상태를 포함한 `snapshot` 메시지로 push한다. 폴더 순서와
+루트 변경은 인증된 WebSocket 명령으로만 받으며 설정 저장 뒤 전체 재스캔한다.
+
+지속되는 사용자 옵션의 UI는 Seelen 위젯 설정이 소유한다. `기본 Desktop 폴더 사용`
+스위치와 사용자 지정 절대 경로를 위젯이 Companion의 `useDefaultRoot`·`setRoot` 명령으로
+동기화한다. Companion의 앱 로컬 설정은 검증을 통과한 루트와 Dock 폴더 순서를 보존해
+재연결 전에도 안전한 snapshot을 만들 수 있게 한다.
+
+우측 상단 숨은 설정 진입 영역과 위젯 내부 설정 패널은 제거한다. 자동 watcher가 정상
+상태의 재스캔을 담당하며, 수동 재스캔은 연결·watcher·루트 오류 때만 표시되는 재시도
+패널에서 제공한다. 정상 연결과 감시 상태는 화면에 상시 표시하지 않는다.
 
 아이콘과 썸네일은 파일 경로를 위젯에 노출하지 않고 인증된
 `/visual/{kind}/{fileId}`로 제공한다. Companion은 현재 snapshot에 포함된 ID만 실제
@@ -41,7 +50,8 @@ Wallpaper.Seelen.Companion (Windows)
 - 실제 Desktop 또는 저장된 사용자 루트의 얕은 snapshot
 - 직접 자식 폴더 Dock, 가상 `…`, 단일 폴더 파일 모달
 - 숨김·시스템·재분석 지점 제외와 오류 상태
-- 우측 상단 1초 hover 설정 패널, Windows 네이티브 폴더 선택과 루트 변경
+- Seelen 위젯 설정의 기본 Desktop·사용자 지정 루트 선택과 Companion 동기화
+- 연결·watcher·루트 오류 전용 재시도 패널
 
 ## M2 범위
 

@@ -17,4 +17,47 @@ preset: Desktop
 html: !include index.html
 js: !include index.js
 css: !include index.css
-settings: []
+settings:
+  - type: switch
+    key: useDefaultDesktop
+    label:
+      en: Use the default Desktop folder
+      ko: 기본 Desktop 폴더 사용
+    description:
+      en: Turn this off to use the custom root path below.
+      ko: 아래의 사용자 지정 루트 경로를 사용하려면 끄세요.
+    defaultValue: true
+
+  - type: text
+    key: customRootPath
+    label:
+      en: Custom root path
+      ko: 사용자 지정 루트 경로
+    description:
+      en: Enter an absolute Windows folder path. This is ignored while the default Desktop folder is enabled.
+      ko: Windows 절대 폴더 경로를 입력하세요. 기본 Desktop 폴더 사용 중에는 적용되지 않습니다.
+    defaultValue: ""
+    multiline: false
+
+  - type: switch
+    key: useCustomFolderColor
+    label:
+      en: Use a custom folder color
+      ko: 사용자 지정 폴더 색 사용
+    description:
+      en: Off follows the current Windows/Seelen accent color.
+      ko: 끄면 현재 Windows/Seelen 강조색을 따릅니다.
+    defaultValue: false
+
+  - type: color
+    key: customFolderColor
+    label:
+      en: Folder color
+      ko: 폴더 색
+    description:
+      en: Used only when custom folder color is enabled.
+      ko: 사용자 지정 폴더 색을 켰을 때만 사용합니다.
+    defaultValue: "#b7659d"
+    allowAlpha: false
+    dependencies:
+      - useCustomFolderColor

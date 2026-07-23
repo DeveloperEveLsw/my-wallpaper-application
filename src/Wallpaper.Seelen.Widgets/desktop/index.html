@@ -4,30 +4,12 @@
     <time id="clock-date">날짜</time>
   </section>
 
-  <div id="settings-trigger" aria-hidden="true"></div>
-  <aside id="settings-panel" class="settings-panel" aria-label="설정" hidden>
-    <header class="panel-header">
-      <h1>설정</h1>
-      <button id="settings-close" class="glass-button icon-button" type="button" aria-label="설정 닫기">×</button>
-    </header>
-
-    <p class="field-label">월페이퍼 루트</p>
-    <div id="root-path" class="root-path" title="선택되지 않음">선택되지 않음</div>
-
-    <div class="settings-actions">
-      <button id="root-choose" class="glass-button" type="button">폴더 선택</button>
-      <button id="refresh-button" class="glass-button" type="button">다시 스캔</button>
+  <aside id="error-panel" class="error-panel" aria-live="polite" hidden>
+    <div class="error-copy">
+      <strong id="error-title">Wallpaper 오류</strong>
+      <span id="error-message"></span>
     </div>
-
-    <section class="root-status" aria-live="polite">
-      <strong id="root-name">루트 미설정</strong>
-      <span id="status-message">루트 폴더를 선택하세요.</span>
-    </section>
-    <p id="host-status" class="host-status">
-      <span id="connection-status" data-state="pending">연결 중</span>
-      <span aria-hidden="true"> · </span>
-      <span id="watch-status">감시 확인 중</span>
-    </p>
+    <button id="retry-button" class="glass-button" type="button">재시도</button>
   </aside>
 
   <div id="file-modal" class="modal-layer" hidden>

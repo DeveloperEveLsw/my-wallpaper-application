@@ -191,6 +191,23 @@ public sealed class DesktopProjectionService : IAsyncDisposable
         }
     }
 
+    public async Task<bool> UseDefaultRootAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await _settingsLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _settings = _settings with { RootPath = null };
+            await _settingsStore.SaveAsync(_settings, cancellationToken).ConfigureAwait(false);
+            await RefreshAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            _settingsLock.Release();
+        }
+    }
+
     public bool TryGetFile(string id, out ProjectionFileTarget? target)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -295,7 +312,7 @@ public sealed class DesktopProjectionService : IAsyncDisposable
                 ? $"/visual/thumbnail/{encodedId}"
                 : null);
         var absolutePath = Path.GetFullPath(Path.Combine(rootPath, file.RelativePath));
-        targets[file.Id] = new ProjectionFileTarget(file.Id, absolutePath, projection);
+        targets[file.Id] = new ProjectionFileTarget(file.Id, rootPath, absolutePath, projection);
         return projection;
     }
 
