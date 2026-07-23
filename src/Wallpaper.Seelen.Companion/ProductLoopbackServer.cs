@@ -7,14 +7,13 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Primitives;
-using Wallpaper.Core.FileOperations;
 using Wallpaper.Infrastructure.Windows.FileOperations;
 
 namespace Wallpaper.Seelen.Companion;
 
 internal sealed class ProductLoopbackServer : IAsyncDisposable
 {
-    private const int ProtocolVersion = 3;
+    private const int ProtocolVersion = 4;
     private const int MaximumIncomingBytes = 256 * 1024;
 
     private ProductLoopbackServer(WebApplication application, int port)
@@ -35,6 +34,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         IFileCommandService fileCommands,
         CancellationToken cancellationToken)
     {
+        var commandService = new DesktopCommandService(projection, fileCommands);
         foreach (var port in options.CandidatePorts)
         {
             if (!CanBindExclusively(port))
@@ -47,7 +47,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 sessions,
                 projection,
                 visuals,
-                fileCommands);
+                commandService);
             try
             {
                 await application.StartAsync(cancellationToken);
@@ -69,7 +69,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         SessionRegistry sessions,
         DesktopProjectionService projection,
         WindowsVisualResponseService visuals,
-        IFileCommandService fileCommands)
+        DesktopCommandService commandService)
     {
         var builder = WebApplication.CreateSlimBuilder(
             new WebApplicationOptions
@@ -192,7 +192,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 context,
                 sessions,
                 projection,
-                fileCommands,
+                commandService,
                 port));
         return application;
     }
@@ -201,7 +201,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         HttpContext context,
         SessionRegistry sessions,
         DesktopProjectionService projection,
-        IFileCommandService fileCommands,
+        DesktopCommandService commandService,
         int port)
     {
         var origin = GetSingleHeader(context.Request.Headers, "Origin");
@@ -265,7 +265,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                     socket,
                     session.Token,
                     projection,
-                    fileCommands,
+                    commandService,
                     outgoing.Writer,
                     connection.Token);
                 var sendTask = SendOutgoingAsync(socket, outgoing.Reader, connection.Token);
@@ -301,7 +301,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         WebSocket socket,
         string sessionToken,
         DesktopProjectionService projection,
-        IFileCommandService fileCommands,
+        DesktopCommandService commandService,
         ChannelWriter<byte[]> outgoing,
         CancellationToken cancellationToken)
     {
@@ -313,136 +313,92 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 return;
             }
 
-            using var document = JsonDocument.Parse(message);
-            var root = document.RootElement;
-            if (!HasSession(root, sessionToken))
+            JsonDocument document;
+            try
             {
-                outgoing.TryWrite(SerializeJson(new { type = "error", code = "invalid_session" }));
+                document = JsonDocument.Parse(message);
+            }
+            catch (JsonException)
+            {
+                outgoing.TryWrite(SerializeJson(new { type = "error", code = "invalid_message" }));
                 continue;
             }
 
-            var type = root.TryGetProperty("type", out var typeElement)
-                ? typeElement.GetString()
-                : null;
-            if (type == "ping"
-                && root.TryGetProperty("timestamp", out var timestamp)
-                && timestamp.TryGetInt64(out var value))
+            using (document)
             {
-                outgoing.TryWrite(SerializeJson(new { type = "pong", timestamp = value }));
-            }
-            else if (type == "refresh")
-            {
-                await projection.RefreshAsync(cancellationToken: cancellationToken);
-            }
-            else if (type == "setFolderOrder"
-                && root.TryGetProperty("orderedIds", out var ids)
-                && ids.ValueKind == JsonValueKind.Array)
-            {
-                var order = ids.EnumerateArray()
-                    .Select(item => item.GetString())
-                    .Where(item => !string.IsNullOrWhiteSpace(item))
-                    .Cast<string>()
-                    .Take(4096)
-                    .ToArray();
-                var accepted = await projection.SetFolderOrderAsync(order, cancellationToken);
-                outgoing.TryWrite(SerializeJson(new { type = "folderOrderAck", accepted }));
-            }
-            else if (type == "setRoot"
-                && root.TryGetProperty("rootPath", out var rootPathElement)
-                && rootPathElement.GetString() is { } rootPath)
-            {
-                var accepted = await projection.SetRootPathAsync(rootPath, cancellationToken);
-                outgoing.TryWrite(
-                    SerializeJson(
-                        new
-                        {
-                            type = "setRootAck",
-                            rootPath,
-                            accepted,
-                        }));
-            }
-            else if (type == "useDefaultRoot")
-            {
-                var accepted = await projection.UseDefaultRootAsync(cancellationToken);
-                outgoing.TryWrite(
-                    SerializeJson(
-                        new
-                        {
-                            type = "useDefaultRootAck",
-                            accepted,
-                        }));
-            }
-            else if (type == "openFile"
-                && root.TryGetProperty("fileId", out var fileIdElement)
-                && fileIdElement.GetString() is { } fileId)
-            {
-                await OpenFileAsync(
-                    fileId,
-                    projection,
-                    fileCommands,
-                    outgoing,
-                    cancellationToken);
-            }
-            else
-            {
-                outgoing.TryWrite(SerializeJson(new { type = "error", code = "invalid_message" }));
-            }
-        }
-    }
+                var root = document.RootElement;
+                if (!HasSession(root, sessionToken))
+                {
+                    outgoing.TryWrite(SerializeJson(new { type = "error", code = "invalid_session" }));
+                    continue;
+                }
 
-    private static async Task OpenFileAsync(
-        string fileId,
-        DesktopProjectionService projection,
-        IFileCommandService fileCommands,
-        ChannelWriter<byte[]> outgoing,
-        CancellationToken cancellationToken)
-    {
-        if (!projection.TryGetFile(fileId, out var target) || target is null)
-        {
-            outgoing.TryWrite(
-                SerializeJson(
-                    new
-                    {
-                        type = "openFileAck",
-                        fileId,
-                        accepted = false,
-                        code = "target_missing",
-                        message = "선택한 파일이 더 이상 현재 목록에 없습니다.",
-                    }));
-            return;
-        }
-
-        try
-        {
-            await fileCommands.OpenAsync(
-                new FileCommandTarget(
-                    target.RootPath,
-                    target.File.RelativePath,
-                    FileCommandItemKind.File),
-                cancellationToken);
-            outgoing.TryWrite(
-                SerializeJson(
-                    new
-                    {
-                        type = "openFileAck",
-                        fileId,
-                        accepted = true,
-                        code = (string?)null,
-                        message = (string?)null,
-                    }));
-        }
-        catch (FileCommandException exception)
-        {
-            outgoing.TryWrite(
-                SerializeJson(
-                    new
-                    {
-                        type = "openFileAck",
-                        fileId,
-                        accepted = false,
-                        code = exception.Error.ToString(),
-                        message = exception.Message,
-                    }));
+                var type = root.TryGetProperty("type", out var typeElement)
+                    && typeElement.ValueKind == JsonValueKind.String
+                        ? typeElement.GetString()
+                        : null;
+                if (type == "ping"
+                    && root.TryGetProperty("timestamp", out var timestamp)
+                    && timestamp.TryGetInt64(out var value))
+                {
+                    outgoing.TryWrite(SerializeJson(new { type = "pong", timestamp = value }));
+                }
+                else if (type == "refresh")
+                {
+                    await commandService.RefreshProjectionAsync(cancellationToken);
+                }
+                else if (type == "setFolderOrder"
+                    && root.TryGetProperty("orderedIds", out var ids)
+                    && ids.ValueKind == JsonValueKind.Array)
+                {
+                    var order = ids.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String)
+                        .Select(item => item.GetString())
+                        .Where(item => !string.IsNullOrWhiteSpace(item))
+                        .Cast<string>()
+                        .Take(4096)
+                        .ToArray();
+                    var accepted = await commandService.SetFolderOrderAsync(order, cancellationToken);
+                    outgoing.TryWrite(SerializeJson(new { type = "folderOrderAck", accepted }));
+                }
+                else if (type == "setRoot"
+                    && root.TryGetProperty("rootPath", out var rootPathElement)
+                    && rootPathElement.ValueKind == JsonValueKind.String
+                    && rootPathElement.GetString() is { } rootPath)
+                {
+                    var accepted = await commandService.SetRootPathAsync(rootPath, cancellationToken);
+                    outgoing.TryWrite(
+                        SerializeJson(
+                            new
+                            {
+                                type = "setRootAck",
+                                rootPath,
+                                accepted,
+                            }));
+                }
+                else if (type == "useDefaultRoot")
+                {
+                    var accepted = await commandService.UseDefaultRootAsync(cancellationToken);
+                    outgoing.TryWrite(
+                        SerializeJson(
+                            new
+                            {
+                                type = "useDefaultRootAck",
+                                accepted,
+                            }));
+                }
+                else if (type == "itemCommand"
+                    && DesktopCommandProtocol.TryParse(root, out var request)
+                    && request is not null)
+                {
+                    var result = await commandService.ExecuteAsync(request, cancellationToken);
+                    outgoing.TryWrite(SerializeJson(result));
+                }
+                else
+                {
+                    outgoing.TryWrite(SerializeJson(new { type = "error", code = "invalid_message" }));
+                }
+            }
         }
     }
 
@@ -464,6 +420,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
     private static bool HasSession(JsonElement root, string expected) =>
         root.ValueKind == JsonValueKind.Object
         && root.TryGetProperty("sessionToken", out var token)
+        && token.ValueKind == JsonValueKind.String
         && string.Equals(token.GetString(), expected, StringComparison.Ordinal);
 
     private static bool TryReadHello(ReadOnlySpan<byte> utf8, out string? nonce)

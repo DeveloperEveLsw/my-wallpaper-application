@@ -8,11 +8,17 @@ import {
   Widget,
 } from "@seelen-ui/lib";
 import { currentMonitor } from "@tauri-apps/api/window";
+import {
+  isNameValidationMessage,
+  isValidFileMoveDestination,
+  placeFloatingPanel,
+  validateWindowsName,
+} from "./interaction-policy.js";
 
 const EXPECTED_ORIGIN = "http://tauri.localhost";
 const PORT_START = 43127;
 const PORT_COUNT = 9;
-const PROTOCOL_VERSION = 3;
+const PROTOCOL_VERSION = 4;
 const TILE_WIDTH = 128;
 const TILE_GAP = 8;
 const TILE_ROW_HEIGHT = 130;
@@ -44,6 +50,20 @@ const list = document.getElementById("file-list");
 const spacer = document.getElementById("file-list-spacer");
 const rows = document.getElementById("file-list-rows");
 const emptyFiles = document.getElementById("file-empty");
+const itemMenu = document.getElementById("item-menu");
+const renameDialog = document.getElementById("rename-dialog");
+const renameForm = document.getElementById("rename-form");
+const renameInput = document.getElementById("rename-input");
+const renameError = document.getElementById("rename-error");
+const recycleDialog = document.getElementById("recycle-dialog");
+const recycleForm = document.getElementById("recycle-form");
+const recycleError = document.getElementById("recycle-error");
+const moveDialog = document.getElementById("move-dialog");
+const moveForm = document.getElementById("move-form");
+const moveInput = document.getElementById("move-input");
+const moveError = document.getElementById("move-error");
+const fileDragGhost = document.getElementById("file-drag-ghost");
+const commandStatus = document.getElementById("command-status");
 
 let socket = null;
 let sessionToken = null;
@@ -55,6 +75,14 @@ let reconnectTimer = null;
 let pingTimer = null;
 let rootSyncTimer = null;
 let draggedFolderId = null;
+let draggedFile = null;
+let fileDropHandled = false;
+let selectedItemId = null;
+let contextItem = null;
+let renameTarget = null;
+let recycleTarget = null;
+let pendingMove = null;
+let deferredSnapshot = null;
 let widgetPhysicalRect = null;
 let lastGlobalCursor = null;
 let ignoringCursorEvents = false;
@@ -68,6 +96,7 @@ let activeIssueKey = null;
 const visualUrls = new Map();
 const issues = new Map();
 const dismissedIssueSignatures = new Map();
+const pendingCommands = new Map();
 
 await widget.init({
   saveAndRestoreLastRect: false,
@@ -93,15 +122,72 @@ function bindUi() {
       closeModal();
     }
   });
+  itemMenu.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-item-command]");
+    if (button) {
+      void handleItemMenuCommand(button.dataset.itemCommand);
+    }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!itemMenu.hidden && !itemMenu.contains(event.target)) {
+      closeItemMenu();
+    }
+  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !modal.hidden) {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    if (!itemMenu.hidden) {
+      event.preventDefault();
+      closeItemMenu();
+    } else if (!renameDialog.hidden) {
+      event.preventDefault();
+      closeRenameDialog();
+    } else if (!recycleDialog.hidden) {
+      event.preventDefault();
+      closeRecycleDialog();
+    } else if (!moveDialog.hidden) {
+      event.preventDefault();
+      cancelMoveDialog();
+    } else if (!modal.hidden) {
+      event.preventDefault();
       closeModal();
     }
+  });
+  renameInput.addEventListener("input", validateRenameInput);
+  moveInput.addEventListener("input", validateMoveInput);
+  renameForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitRename();
+  });
+  recycleForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitRecycle();
+  });
+  moveForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitMove();
+  });
+  document.getElementById("rename-cancel").addEventListener("click", closeRenameDialog);
+  document.getElementById("recycle-cancel").addEventListener("click", closeRecycleDialog);
+  document.getElementById("move-cancel").addEventListener("click", cancelMoveDialog);
+  renameDialog.addEventListener("pointerdown", (event) => {
+    if (event.target === renameDialog) closeRenameDialog();
+  });
+  recycleDialog.addEventListener("pointerdown", (event) => {
+    if (event.target === recycleDialog) closeRecycleDialog();
+  });
+  moveDialog.addEventListener("pointerdown", (event) => {
+    if (event.target === moveDialog) cancelMoveDialog();
   });
   list.addEventListener("scroll", renderVisibleRows, { passive: true });
   window.addEventListener("resize", () => {
     if (!modal.hidden) {
       updateVirtualGrid();
+    }
+    if (!itemMenu.hidden) {
+      closeItemMenu();
     }
   });
   document.addEventListener("contextmenu", (event) => {
@@ -245,7 +331,9 @@ function rerouteLastCursor() {
 
 function isInteractiveElement(element) {
   return element instanceof Element
-    && element.closest("#dock, #error-panel, .file-modal") !== null;
+    && element.closest(
+      "#dock, #error-panel, #item-menu, .file-modal, .dialog-layer",
+    ) !== null;
 }
 
 function setCursorEventsIgnored(ignored) {
@@ -591,23 +679,8 @@ function adoptSocket(currentGeneration) {
           ),
         );
       }
-    } else if (message.type === "openFileAck") {
-      if (message.accepted) {
-        setIssue("command", null);
-      } else {
-        setIssue(
-          "command",
-          createIssue(
-            60,
-            "파일을 열지 못했습니다.",
-            message.message || "파일이 이동되었거나 기본 연결 프로그램을 사용할 수 없습니다.",
-            () => {
-              setIssue("command", null);
-              sendAuthenticated({ type: "openFile", fileId: message.fileId });
-            },
-          ),
-        );
-      }
+    } else if (message.type === "itemCommandAck") {
+      settlePendingCommand(message);
     } else if (message.type === "error") {
       setIssue(
         "command",
@@ -647,6 +720,15 @@ function applySnapshot(nextSnapshot) {
     return;
   }
 
+  if (shouldDeferSnapshot()) {
+    deferredSnapshot = nextSnapshot;
+    return;
+  }
+
+  applySnapshotNow(nextSnapshot);
+}
+
+function applySnapshotNow(nextSnapshot) {
   snapshot = nextSnapshot;
   pruneVisualUrls();
   updateSnapshotIssue(snapshot);
@@ -658,6 +740,12 @@ function applySnapshot(nextSnapshot) {
   ) {
     setIssue("root-configuration", null);
   }
+  if (selectedItemId && !findProjectedFile(selectedItemId)) {
+    selectedItemId = null;
+  }
+  if (contextItem && !findProjectedItem(contextItem.id)) {
+    closeItemMenu();
+  }
   renderDock();
   if (!modal.hidden) {
     const selected = [...snapshot.folders, snapshot.looseFiles]
@@ -668,6 +756,24 @@ function applySnapshot(nextSnapshot) {
       closeModal();
     }
   }
+}
+
+function shouldDeferSnapshot() {
+  return draggedFile
+    || draggedFolderId
+    || !renameDialog.hidden
+    || !recycleDialog.hidden
+    || !moveDialog.hidden;
+}
+
+function flushDeferredSnapshot() {
+  if (!deferredSnapshot || shouldDeferSnapshot()) {
+    return;
+  }
+
+  const pending = deferredSnapshot;
+  deferredSnapshot = null;
+  applySnapshotNow(pending);
 }
 
 function updateSnapshotIssue(current) {
@@ -729,10 +835,14 @@ function renderDock() {
   for (const folder of snapshot.folders) {
     const button = createDockButton(folder);
     bindFolderDrag(button, folder);
+    bindFileDrop(button, folder);
     dockFolders.append(button);
   }
 
-  dockLoose.append(createDockButton(snapshot.looseFiles));
+  const looseButton = createDockButton(snapshot.looseFiles);
+  bindFileDrop(looseButton, snapshot.looseFiles);
+  dockLoose.append(looseButton);
+  updateFileDropTargets();
   updateDockSelection();
 }
 
@@ -764,6 +874,13 @@ function createDockButton(folder) {
     ? "루트"
     : folder.name;
   button.addEventListener("click", () => toggleFolder(folder));
+  if (!folder.isLooseFiles) {
+    button.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openItemMenu(createFolderItem(folder), event.clientX, event.clientY);
+    });
+  }
   return button;
 }
 
@@ -789,6 +906,7 @@ function bindFolderDrag(button, folder) {
     draggedFolderId = null;
     button.removeAttribute("aria-grabbed");
     clearDockDropIndicators();
+    flushDeferredSnapshot();
   });
   button.addEventListener("dragover", (event) => {
     if (draggedFolderId && draggedFolderId !== folder.id) {
@@ -827,7 +945,76 @@ function clearDockDropIndicators() {
   }
 }
 
+function bindFileDrop(button, folder) {
+  button.addEventListener("dragover", (event) => {
+    if (!draggedFile) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const valid = isValidFileMoveDestination(
+      draggedFile.sourceFolderId,
+      folder.id,
+    );
+    event.dataTransfer.dropEffect = valid ? "move" : "none";
+    for (const card of dock.querySelectorAll(".dock-card")) {
+      card.classList.remove("file-drop-hover");
+    }
+    button.classList.add("file-drop-hover");
+  });
+  button.addEventListener("dragleave", (event) => {
+    if (!button.contains(event.relatedTarget)) {
+      button.classList.remove("file-drop-hover");
+    }
+  });
+  button.addEventListener("drop", (event) => {
+    if (!draggedFile) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const file = draggedFile;
+    const valid = isValidFileMoveDestination(file.sourceFolderId, folder.id);
+    fileDropHandled = true;
+    clearFileDropTargets();
+    if (!valid) {
+      announceCommand("파일이 이미 선택한 카드에 있습니다.");
+      retryRefresh();
+      return;
+    }
+
+    void prepareFileMove(file, folder);
+  });
+}
+
+function updateFileDropTargets() {
+  for (const card of dock.querySelectorAll(".dock-card")) {
+    const valid = draggedFile && isValidFileMoveDestination(
+      draggedFile.sourceFolderId,
+      card.dataset.folderId,
+    );
+    card.classList.toggle("file-drop-valid", Boolean(valid));
+    card.classList.toggle("file-drop-invalid", Boolean(draggedFile) && !valid);
+    if (!draggedFile) {
+      card.classList.remove("file-drop-hover");
+    }
+  }
+}
+
+function clearFileDropTargets() {
+  for (const card of dock.querySelectorAll(".dock-card")) {
+    card.classList.remove(
+      "file-drop-valid",
+      "file-drop-invalid",
+      "file-drop-hover",
+    );
+  }
+}
+
 function toggleFolder(folder) {
+  closeItemMenu();
   if (!modal.hidden && modal.dataset.folderId === folder.id) {
     closeModal();
     return;
@@ -844,6 +1031,9 @@ function showFolder(folder, preserveScroll) {
     : folder.name;
   document.getElementById("modal-summary").textContent = `${folder.files.length.toLocaleString()}개 파일`;
   activeFiles = folder.files;
+  if (!activeFiles.some((file) => file.id === selectedItemId)) {
+    selectedItemId = null;
+  }
   emptyFiles.hidden = activeFiles.length !== 0;
   list.scrollTop = previousScrollTop;
   updateVirtualGrid();
@@ -853,9 +1043,11 @@ function showFolder(folder, preserveScroll) {
 }
 
 function closeModal() {
+  closeItemMenu();
   modal.hidden = true;
   modal.removeAttribute("data-folder-id");
   activeFiles = [];
+  selectedItemId = null;
   rows.replaceChildren();
   emptyFiles.hidden = true;
   updateDockSelection();
@@ -878,6 +1070,10 @@ function getFileColumnCount() {
 }
 
 function renderVisibleRows() {
+  if (draggedFile) {
+    return;
+  }
+
   const columnCount = getFileColumnCount();
   const rowCount = Math.ceil(activeFiles.length / columnCount);
   const firstRow = Math.max(
@@ -905,16 +1101,47 @@ function renderVisibleRows() {
       tile.className = "file-tile";
       tile.tabIndex = 0;
       tile.title = file.name;
+      tile.draggable = true;
+      tile.dataset.itemId = file.id;
+      tile.setAttribute("role", "option");
+      tile.setAttribute("aria-selected", String(file.id === selectedItemId));
+      tile.classList.toggle("is-selected", file.id === selectedItemId);
+      tile.addEventListener("click", () => selectFile(file.id));
       tile.addEventListener("dblclick", (event) => {
         event.preventDefault();
-        sendAuthenticated({ type: "openFile", fileId: file.id });
+        void executeImmediateItemCommand(
+          "open",
+          createFileItem(file, modal.dataset.folderId),
+        );
+      });
+      tile.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectFile(file.id);
+        openItemMenu(
+          createFileItem(file, modal.dataset.folderId),
+          event.clientX,
+          event.clientY,
+        );
       });
       tile.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          sendAuthenticated({ type: "openFile", fileId: file.id });
+          void executeImmediateItemCommand(
+            "open",
+            createFileItem(file, modal.dataset.folderId),
+          );
+        } else if (event.key === "F10" && event.shiftKey) {
+          event.preventDefault();
+          const bounds = tile.getBoundingClientRect();
+          openItemMenu(
+            createFileItem(file, modal.dataset.folderId),
+            bounds.left + Math.min(24, bounds.width / 2),
+            bounds.top + Math.min(24, bounds.height / 2),
+          );
         }
       });
+      bindFileDrag(tile, file, modal.dataset.folderId);
 
       const visual = document.createElement("span");
       visual.className = "file-visual";
@@ -940,6 +1167,563 @@ function renderVisibleRows() {
       void loadVisual(file, elements);
     }
   }
+}
+
+function selectFile(fileId) {
+  selectedItemId = fileId;
+  for (const tile of rows.querySelectorAll(".file-tile")) {
+    const selected = tile.dataset.itemId === fileId;
+    tile.classList.toggle("is-selected", selected);
+    tile.setAttribute("aria-selected", String(selected));
+  }
+}
+
+function bindFileDrag(tile, file, sourceFolderId) {
+  tile.addEventListener("dragstart", (event) => {
+    if (!event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+
+    closeItemMenu();
+    selectFile(file.id);
+    draggedFile = createFileItem(file, sourceFolderId);
+    fileDropHandled = false;
+    tile.setAttribute("aria-grabbed", "true");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-wallpaper-file-id", file.id);
+    event.dataTransfer.setData("text/plain", file.name);
+    fileDragGhost.textContent = file.name;
+    fileDragGhost.hidden = false;
+    event.dataTransfer.setDragImage(fileDragGhost, 18, 18);
+    updateFileDropTargets();
+    announceCommand(`${file.name} 이동 시작`);
+  });
+  tile.addEventListener("dragend", () => {
+    tile.removeAttribute("aria-grabbed");
+    fileDragGhost.hidden = true;
+    clearFileDropTargets();
+    const shouldRefresh = Boolean(draggedFile) && !fileDropHandled;
+    draggedFile = null;
+    fileDropHandled = false;
+    renderVisibleRows();
+    if (shouldRefresh) {
+      retryRefresh();
+      announceCommand("파일 이동을 취소했습니다.");
+    }
+    flushDeferredSnapshot();
+  });
+}
+
+function createFileItem(file, sourceFolderId) {
+  return {
+    id: file.id,
+    kind: "file",
+    name: file.name,
+    sourceFolderId,
+  };
+}
+
+function createFolderItem(folder) {
+  return {
+    id: folder.id,
+    kind: "folder",
+    name: folder.name,
+    sourceFolderId: null,
+  };
+}
+
+function findProjectedFile(itemId) {
+  if (!snapshot) {
+    return null;
+  }
+
+  for (const folder of [...snapshot.folders, snapshot.looseFiles]) {
+    const file = folder.files.find((candidate) => candidate.id === itemId);
+    if (file) {
+      return createFileItem(file, folder.id);
+    }
+  }
+
+  return null;
+}
+
+function findProjectedItem(itemId) {
+  if (!snapshot) {
+    return null;
+  }
+
+  const folder = snapshot.folders.find((candidate) => candidate.id === itemId);
+  return folder ? createFolderItem(folder) : findProjectedFile(itemId);
+}
+
+function openItemMenu(item, clientX, clientY) {
+  if (!item) {
+    return;
+  }
+
+  contextItem = item;
+  itemMenu.hidden = false;
+  itemMenu.style.left = "0";
+  itemMenu.style.top = "0";
+  const position = placeFloatingPanel(
+    clientX,
+    clientY,
+    itemMenu.offsetWidth,
+    itemMenu.offsetHeight,
+    globalThis.innerWidth,
+    globalThis.innerHeight,
+  );
+  itemMenu.style.left = `${position.left}px`;
+  itemMenu.style.top = `${position.top}px`;
+  itemMenu.querySelector("button")?.focus();
+  rerouteLastCursor();
+}
+
+function closeItemMenu() {
+  if (itemMenu.hidden) {
+    return;
+  }
+
+  itemMenu.hidden = true;
+  contextItem = null;
+  rerouteLastCursor();
+}
+
+async function handleItemMenuCommand(action) {
+  const item = contextItem;
+  closeItemMenu();
+  if (!item) {
+    return;
+  }
+
+  if (action === "rename") {
+    openRenameDialog(item);
+  } else if (action === "recycle") {
+    openRecycleDialog(item);
+  } else if (action === "open" || action === "showInExplorer") {
+    await executeImmediateItemCommand(action, item);
+  }
+}
+
+async function executeImmediateItemCommand(action, item) {
+  try {
+    announceCommand(action === "open" ? `${item.name} 열기` : `${item.name} 위치 열기`);
+    const result = await sendItemCommand(action, item.id);
+    if (result.accepted) {
+      showAcceptedCommandWarning(result);
+      if (!result.message) {
+        setIssue("command", null);
+      }
+      return;
+    }
+
+    const title = action === "open"
+      ? "항목을 열지 못했습니다."
+      : "탐색기에서 위치를 열지 못했습니다.";
+    setCommandIssue(
+      title,
+      result.message,
+      () => void executeImmediateItemCommand(action, item),
+    );
+  } catch (error) {
+    setCommandIssue(
+      "Companion 명령을 완료하지 못했습니다.",
+      error instanceof Error ? error.message : String(error),
+      () => void executeImmediateItemCommand(action, item),
+    );
+  }
+}
+
+function openRenameDialog(item) {
+  closeRecycleDialog();
+  closeMoveDialog({ refresh: false });
+  renameTarget = item;
+  document.getElementById("rename-description").textContent =
+    `${item.kind === "folder" ? "폴더" : "파일"} “${item.name}”의 새 이름을 입력하세요.`;
+  renameInput.value = item.name;
+  renameError.textContent = "";
+  renameDialog.hidden = false;
+  setDialogBusy(renameDialog, false);
+  validateRenameInput();
+  renameInput.focus();
+  renameInput.select();
+  rerouteLastCursor();
+}
+
+function closeRenameDialog() {
+  if (renameDialog.dataset.busy === "true") {
+    return;
+  }
+
+  renameDialog.hidden = true;
+  renameTarget = null;
+  renameError.textContent = "";
+  flushDeferredSnapshot();
+  rerouteLastCursor();
+}
+
+function validateRenameInput() {
+  const validation = validateWindowsName(renameInput.value);
+  const unchanged = renameTarget && renameInput.value === renameTarget.name;
+  renameError.textContent = validation ?? (unchanged ? "현재 이름과 동일합니다." : "");
+  document.getElementById("rename-confirm").disabled = Boolean(validation || unchanged);
+  return !validation && !unchanged;
+}
+
+async function submitRename() {
+  if (!renameTarget || !validateRenameInput()) {
+    return;
+  }
+
+  setDialogBusy(renameDialog, true);
+  renameError.textContent = "";
+  try {
+    const result = await sendItemCommand(
+      "rename",
+      renameTarget.id,
+      { newName: renameInput.value },
+    );
+    if (result.accepted) {
+      setDialogBusy(renameDialog, false);
+      closeRenameDialog();
+      showAcceptedCommandWarning(result);
+      announceCommand("이름을 변경했습니다.");
+      return;
+    }
+
+    renameError.textContent = result.message || "이름을 변경하지 못했습니다.";
+  } catch (error) {
+    renameError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (!renameDialog.hidden) {
+      setDialogBusy(renameDialog, false);
+      validateRenameInput();
+    }
+  }
+}
+
+function openRecycleDialog(item) {
+  closeRenameDialog();
+  closeMoveDialog({ refresh: false });
+  recycleTarget = item;
+  const nestedWarning = item.kind === "folder"
+    ? "\n화면에 표시되지 않는 하위 폴더와 파일도 함께 이동합니다."
+    : "";
+  document.getElementById("recycle-description").textContent =
+    `“${item.name}”을 Windows 휴지통으로 이동하시겠습니까?${nestedWarning}`;
+  recycleError.textContent = "";
+  recycleDialog.hidden = false;
+  setDialogBusy(recycleDialog, false);
+  document.getElementById("recycle-confirm").focus();
+  rerouteLastCursor();
+}
+
+function closeRecycleDialog() {
+  if (recycleDialog.dataset.busy === "true") {
+    return;
+  }
+
+  recycleDialog.hidden = true;
+  recycleTarget = null;
+  recycleError.textContent = "";
+  flushDeferredSnapshot();
+  rerouteLastCursor();
+}
+
+async function submitRecycle() {
+  if (!recycleTarget) {
+    return;
+  }
+
+  setDialogBusy(recycleDialog, true);
+  recycleError.textContent = "";
+  try {
+    const result = await sendItemCommand("recycle", recycleTarget.id);
+    if (result.accepted) {
+      setDialogBusy(recycleDialog, false);
+      closeRecycleDialog();
+      showAcceptedCommandWarning(result);
+      announceCommand("휴지통으로 이동했습니다.");
+      return;
+    }
+
+    recycleError.textContent = result.message || "휴지통으로 이동하지 못했습니다.";
+  } catch (error) {
+    recycleError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (!recycleDialog.hidden) {
+      setDialogBusy(recycleDialog, false);
+    }
+  }
+}
+
+async function prepareFileMove(file, destination, desiredName = null) {
+  try {
+    announceCommand(`${destination.isLooseFiles ? "루트" : destination.name}(으)로 이동 준비`);
+    const result = await sendItemCommand(
+      "prepareMove",
+      file.id,
+      {
+        destinationId: destination.id,
+        newName: desiredName,
+      },
+    );
+    if (!result.accepted) {
+      setCommandIssue(
+        "파일을 이동할 수 없습니다.",
+        result.message,
+        () => void prepareFileMove(file, destination, desiredName),
+      );
+      return;
+    }
+
+    const move = {
+      destination,
+      file,
+      proposedName: result.proposedName || file.name,
+    };
+    if (result.hasNameCollision) {
+      openMoveDialog(move);
+    } else {
+      await executePreparedMove(move, move.proposedName);
+    }
+  } catch (error) {
+    setCommandIssue(
+      "파일 이동을 준비하지 못했습니다.",
+      error instanceof Error ? error.message : String(error),
+      () => void prepareFileMove(file, destination, desiredName),
+    );
+  }
+}
+
+async function executePreparedMove(move, newName) {
+  try {
+    const result = await sendItemCommand(
+      "move",
+      move.file.id,
+      {
+        destinationId: move.destination.id,
+        newName,
+      },
+    );
+    if (result.accepted) {
+      showAcceptedCommandWarning(result);
+      announceCommand(`${newName}(으)로 이동했습니다.`);
+      return true;
+    }
+
+    if (result.code === "NameCollision") {
+      await refreshMoveProposal(move, newName, result.message);
+      return false;
+    }
+
+    setCommandIssue(
+      "파일을 이동하지 못했습니다.",
+      result.message,
+      () => void prepareFileMove(move.file, move.destination, newName),
+    );
+    return false;
+  } catch (error) {
+    setCommandIssue(
+      "파일 이동 명령을 완료하지 못했습니다.",
+      error instanceof Error ? error.message : String(error),
+      () => void prepareFileMove(move.file, move.destination, newName),
+    );
+    return false;
+  }
+}
+
+function openMoveDialog(move, errorMessage = "") {
+  closeRenameDialog();
+  closeRecycleDialog();
+  pendingMove = move;
+  document.getElementById("move-description").textContent =
+    `“${move.file.name}”을 ${move.destination.isLooseFiles ? "루트" : `“${move.destination.name}”`}에 이동합니다. 덮어쓰지 않을 새 이름을 확인하세요.`;
+  moveInput.value = move.proposedName;
+  moveError.textContent = errorMessage;
+  moveDialog.hidden = false;
+  setDialogBusy(moveDialog, false);
+  validateMoveInput();
+  moveInput.focus();
+  moveInput.select();
+  rerouteLastCursor();
+}
+
+function closeMoveDialog({ refresh = false } = {}) {
+  if (moveDialog.dataset.busy === "true") {
+    return;
+  }
+
+  const wasOpen = !moveDialog.hidden;
+  moveDialog.hidden = true;
+  pendingMove = null;
+  moveError.textContent = "";
+  if (refresh && wasOpen) {
+    retryRefresh();
+  }
+  flushDeferredSnapshot();
+  rerouteLastCursor();
+}
+
+function cancelMoveDialog() {
+  closeMoveDialog({ refresh: true });
+  announceCommand("파일 이동을 취소했습니다.");
+}
+
+function validateMoveInput() {
+  const validation = validateWindowsName(moveInput.value);
+  moveError.textContent = validation ?? moveError.textContent;
+  if (!validation && isNameValidationMessage(moveError.textContent)) {
+    moveError.textContent = "";
+  }
+  document.getElementById("move-confirm").disabled = Boolean(validation);
+  return !validation;
+}
+
+async function submitMove() {
+  if (!pendingMove || !validateMoveInput()) {
+    return;
+  }
+
+  const move = pendingMove;
+  const newName = moveInput.value;
+  setDialogBusy(moveDialog, true);
+  moveError.textContent = "";
+  const accepted = await executePreparedMove(move, newName);
+  if (accepted) {
+    setDialogBusy(moveDialog, false);
+    closeMoveDialog({ refresh: false });
+    return;
+  }
+
+  if (!moveDialog.hidden) {
+    setDialogBusy(moveDialog, false);
+    validateMoveInput();
+  }
+}
+
+async function refreshMoveProposal(move, desiredName, message) {
+  try {
+    const prepared = await sendItemCommand(
+      "prepareMove",
+      move.file.id,
+      {
+        destinationId: move.destination.id,
+        newName: desiredName,
+      },
+    );
+    if (!prepared.accepted) {
+      moveError.textContent = prepared.message || message || "이동 대상을 다시 확인해 주세요.";
+      return;
+    }
+
+    const nextMove = {
+      ...move,
+      proposedName: prepared.proposedName || desiredName,
+    };
+    const nextMessage =
+      `${message || "같은 이름이 새로 생겼습니다."} 새 이름을 다시 제안했습니다.`;
+    if (moveDialog.hidden) {
+      openMoveDialog(nextMove, nextMessage);
+    } else {
+      pendingMove = nextMove;
+      moveInput.value = nextMove.proposedName;
+      moveError.textContent = nextMessage;
+    }
+  } catch (error) {
+    moveError.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
+function setDialogBusy(dialog, busy) {
+  dialog.dataset.busy = String(busy);
+  for (const control of dialog.querySelectorAll("button, input")) {
+    control.disabled = busy;
+  }
+}
+
+function sendItemCommand(
+  action,
+  itemId,
+  {
+    destinationId = null,
+    newName = null,
+  } = {},
+) {
+  const requestId = crypto.randomUUID();
+  const message = {
+    action,
+    itemId,
+    requestId,
+    type: "itemCommand",
+  };
+  if (destinationId !== null) {
+    message.destinationId = destinationId;
+  }
+  if (newName !== null) {
+    message.newName = newName;
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingCommands.delete(requestId);
+      reject(new Error("Companion 명령 응답 시간이 초과되었습니다."));
+    }, 15_000);
+    pendingCommands.set(requestId, { reject, resolve, timeout });
+    if (!sendAuthenticated(message)) {
+      clearTimeout(timeout);
+      pendingCommands.delete(requestId);
+      reject(new Error("Companion에 연결되어 있지 않습니다."));
+    }
+  });
+}
+
+function settlePendingCommand(message) {
+  const pending = pendingCommands.get(message.requestId);
+  if (!pending) {
+    return;
+  }
+
+  clearTimeout(pending.timeout);
+  pendingCommands.delete(message.requestId);
+  pending.resolve(message);
+}
+
+function rejectPendingCommands(message) {
+  for (const pending of pendingCommands.values()) {
+    clearTimeout(pending.timeout);
+    pending.reject(new Error(message));
+  }
+  pendingCommands.clear();
+}
+
+function setCommandIssue(title, message, retry) {
+  setIssue(
+    "command",
+    createIssue(
+      60,
+      title,
+      message || "파일이 외부에서 변경되었거나 Windows 명령을 완료하지 못했습니다.",
+      retry,
+    ),
+  );
+}
+
+function showAcceptedCommandWarning(result) {
+  if (!result.message) {
+    setIssue("command", null);
+    return;
+  }
+
+  setCommandIssue("파일 작업 후 확인이 필요합니다.", result.message, retryRefresh);
+}
+
+function announceCommand(message) {
+  commandStatus.textContent = "";
+  queueMicrotask(() => {
+    commandStatus.textContent = message;
+  });
 }
 
 function getFileDisplayName(file) {
@@ -1053,6 +1837,7 @@ function updateWatch(watch) {
 }
 
 function closeSocket() {
+  rejectPendingCommands("Companion 연결이 종료되었습니다.");
   sessionToken = null;
   httpBaseUrl = null;
   if (socket) {

@@ -1,5 +1,8 @@
 # M3 검수 체크리스트
 
+> 이 문서는 보존된 WPF 경로의 검수 기록이다. 현재 Seelen 제품 경로의 M3·M4 검수는
+> [Seelen M3·M4 검수 기록](m3-m4-seelen-validation.md)을 따른다.
+
 - 구현 상태: 완료
 - 자동 검증: 통과
 - Windows 세부 UI 검수: 통과, 문제 없음

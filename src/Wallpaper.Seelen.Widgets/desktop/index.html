@@ -21,6 +21,61 @@
     </div>
   </aside>
 
+  <nav id="item-menu" class="item-menu transient-surface" role="menu" aria-label="항목 명령" hidden>
+    <button type="button" role="menuitem" data-item-command="open">열기</button>
+    <button type="button" role="menuitem" data-item-command="showInExplorer">탐색기에서 위치 열기</button>
+    <span class="menu-separator" aria-hidden="true"></span>
+    <button type="button" role="menuitem" data-item-command="rename">이름 변경</button>
+    <button type="button" role="menuitem" class="danger-command" data-item-command="recycle">휴지통으로 이동</button>
+  </nav>
+
+  <div id="rename-dialog" class="dialog-layer" hidden>
+    <form id="rename-form" class="command-dialog transient-surface" aria-labelledby="rename-title">
+      <h2 id="rename-title">이름 변경</h2>
+      <p id="rename-description" class="dialog-description"></p>
+      <label class="dialog-field">
+        <span>새 이름</span>
+        <input id="rename-input" type="text" maxlength="1024" autocomplete="off" spellcheck="false">
+      </label>
+      <p id="rename-error" class="dialog-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="rename-cancel" class="glass-button" type="button">취소</button>
+        <button id="rename-confirm" class="glass-button primary-button" type="submit">변경</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="recycle-dialog" class="dialog-layer" hidden>
+    <form id="recycle-form" class="command-dialog transient-surface" aria-labelledby="recycle-title">
+      <h2 id="recycle-title">휴지통으로 이동</h2>
+      <p id="recycle-description" class="dialog-description"></p>
+      <p id="recycle-error" class="dialog-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="recycle-cancel" class="glass-button" type="button">취소</button>
+        <button id="recycle-confirm" class="glass-button danger-button" type="submit">휴지통으로 이동</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="move-dialog" class="dialog-layer" hidden>
+    <form id="move-form" class="command-dialog transient-surface" aria-labelledby="move-title">
+      <h2 id="move-title">이름 충돌</h2>
+      <p id="move-description" class="dialog-description"></p>
+      <label class="dialog-field">
+        <span>이동할 이름</span>
+        <input id="move-input" type="text" maxlength="1024" autocomplete="off" spellcheck="false">
+      </label>
+      <p id="move-error" class="dialog-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="move-cancel" class="glass-button" type="button">취소</button>
+        <button id="move-confirm" class="glass-button primary-button" type="submit">이동</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="file-drag-ghost" class="file-drag-ghost" aria-hidden="true"></div>
+  <div id="command-status" class="visually-hidden" aria-live="polite"></div>
+
   <div id="file-modal" class="modal-layer" hidden>
     <section class="file-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <header class="panel-header modal-header">

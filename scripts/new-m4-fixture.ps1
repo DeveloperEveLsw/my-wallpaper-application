@@ -3,7 +3,9 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$fixtureId = Get-Date -Format 'yyyyMMdd-HHmmss'
+$fixtureId = '{0}-{1}' -f `
+    (Get-Date -Format 'yyyyMMdd-HHmmss-fff'), `
+    ([Guid]::NewGuid().ToString('N').Substring(0, 8))
 $fixtureRoot = Join-Path $env:LOCALAPPDATA "MyWallpaperApplication\Fixtures\m4-$fixtureId"
 
 $workFolder = New-Item -ItemType Directory -Path (Join-Path $fixtureRoot 'Work') -Force

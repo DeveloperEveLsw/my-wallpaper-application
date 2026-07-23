@@ -1,3 +1,5 @@
+using Wallpaper.Core.FileOperations;
+
 namespace Wallpaper.Seelen;
 
 public sealed record ProjectionSnapshot(
@@ -36,6 +38,19 @@ public sealed record ProjectionFileTarget(
     string RootPath,
     string AbsolutePath,
     ProjectionFile File);
+
+public sealed record ProjectionItemTarget(
+    string Id,
+    string RootPath,
+    string AbsolutePath,
+    string RelativePath,
+    string Name,
+    FileCommandItemKind Kind);
+
+public sealed record ProjectionMoveDestinationTarget(
+    string Id,
+    string RootPath,
+    string? RelativeFolderPath);
 
 public sealed record ProjectionStatus(
     bool ContentWatching,

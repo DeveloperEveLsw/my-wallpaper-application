@@ -21,6 +21,9 @@ public sealed class DesktopProjectionService : IAsyncDisposable
     private readonly string _defaultRootPath;
     private AppSettings _settings = AppSettings.Default;
     private Dictionary<string, ProjectionFileTarget> _files = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ProjectionItemTarget> _items = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ProjectionMoveDestinationTarget> _moveDestinations =
+        new(StringComparer.OrdinalIgnoreCase);
     private ProjectionSnapshot? _current;
     private long _revision;
     private bool _disposed;
@@ -80,13 +83,15 @@ public sealed class DesktopProjectionService : IAsyncDisposable
         {
             ProjectionSnapshot snapshot;
             Dictionary<string, ProjectionFileTarget> files;
+            Dictionary<string, ProjectionItemTarget> items;
+            Dictionary<string, ProjectionMoveDestinationTarget> moveDestinations;
             try
             {
                 var rootPath = ResolveRootPath();
                 var source = await Task.Run(
                     () => _scanner.Scan(rootPath),
                     cancellationToken).ConfigureAwait(false);
-                (snapshot, files) = MapSnapshot(source, statusMessage);
+                (snapshot, files, items, moveDestinations) = MapSnapshot(source, statusMessage);
                 var watch = _watcher.Watch(rootPath);
                 WatchStatus = new ProjectionStatus(
                     watch.IsContentWatching,
@@ -113,12 +118,18 @@ public sealed class DesktopProjectionService : IAsyncDisposable
                     exception.Message,
                     DateTimeOffset.UtcNow);
                 files = new Dictionary<string, ProjectionFileTarget>(StringComparer.OrdinalIgnoreCase);
+                items = new Dictionary<string, ProjectionItemTarget>(StringComparer.OrdinalIgnoreCase);
+                moveDestinations =
+                    new Dictionary<string, ProjectionMoveDestinationTarget>(
+                        StringComparer.OrdinalIgnoreCase);
             }
 
             lock (_gate)
             {
                 _current = snapshot;
                 _files = files;
+                _items = items;
+                _moveDestinations = moveDestinations;
             }
 
             SnapshotChanged?.Invoke(this, snapshot);
@@ -210,10 +221,81 @@ public sealed class DesktopProjectionService : IAsyncDisposable
 
     public bool TryGetFile(string id, out ProjectionFileTarget? target)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            target = null;
+            return false;
+        }
+
         lock (_gate)
         {
             return _files.TryGetValue(id, out target);
+        }
+    }
+
+    public bool TryGetItem(string id, out ProjectionItemTarget? target)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            target = null;
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _items.TryGetValue(id, out target);
+        }
+    }
+
+    public bool TryGetMoveDestination(
+        string id,
+        out ProjectionMoveDestinationTarget? destination)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            destination = null;
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _moveDestinations.TryGetValue(id, out destination);
+        }
+    }
+
+    public async Task ChangeFolderIdentityAsync(
+        string previousId,
+        string? replacementId,
+        IReadOnlyList<string> previousOrder,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(previousId);
+        ArgumentNullException.ThrowIfNull(previousOrder);
+        await _settingsLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var basis = _settings.FolderOrder.Count > 0
+                ? _settings.FolderOrder
+                : previousOrder;
+            var next = new List<string>(basis.Count);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var id in basis)
+            {
+                var candidate = StringComparer.OrdinalIgnoreCase.Equals(id, previousId)
+                    ? replacementId
+                    : id;
+                if (!string.IsNullOrWhiteSpace(candidate) && seen.Add(candidate))
+                {
+                    next.Add(candidate);
+                }
+            }
+
+            _settings = _settings with { FolderOrder = next };
+            await _settingsStore.SaveAsync(_settings, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _settingsLock.Release();
         }
     }
 
@@ -247,19 +329,38 @@ public sealed class DesktopProjectionService : IAsyncDisposable
             ? _defaultRootPath
             : Path.TrimEndingDirectorySeparator(Path.GetFullPath(_settings.RootPath));
 
-    private (ProjectionSnapshot Snapshot, Dictionary<string, ProjectionFileTarget> Files) MapSnapshot(
+    private (
+        ProjectionSnapshot Snapshot,
+        Dictionary<string, ProjectionFileTarget> Files,
+        Dictionary<string, ProjectionItemTarget> Items,
+        Dictionary<string, ProjectionMoveDestinationTarget> MoveDestinations)
+        MapSnapshot(
         DesktopSnapshot source,
         string? statusMessage)
     {
-        var targets = new Dictionary<string, ProjectionFileTarget>(StringComparer.OrdinalIgnoreCase);
+        var fileTargets =
+            new Dictionary<string, ProjectionFileTarget>(StringComparer.OrdinalIgnoreCase);
+        var itemTargets =
+            new Dictionary<string, ProjectionItemTarget>(StringComparer.OrdinalIgnoreCase);
+        var moveDestinations =
+            new Dictionary<string, ProjectionMoveDestinationTarget>(StringComparer.OrdinalIgnoreCase);
         var naturalFolders = source.Folders.Select(folder => folder.Id);
         var folderOrder = FolderOrderPolicy.Merge(naturalFolders, _settings.FolderOrder);
         var folderById = source.Folders.ToDictionary(folder => folder.Id, StringComparer.OrdinalIgnoreCase);
         var folders = folderOrder
-            .Select(id => MapFolder(source.RootPath, folderById[id], targets))
+            .Select(id => MapFolder(
+                source.RootPath,
+                folderById[id],
+                fileTargets,
+                itemTargets,
+                moveDestinations))
             .ToArray();
         var looseFiles = CreateLooseFiles(
-            source.RootFiles.Select(file => MapFile(source.RootPath, file, targets)).ToArray());
+            source.RootFiles
+                .Select(file => MapFile(source.RootPath, file, fileTargets, itemTargets))
+                .ToArray());
+        moveDestinations[looseFiles.Id] =
+            new ProjectionMoveDestinationTarget(looseFiles.Id, source.RootPath, null);
         var warnings = source.Warnings
             .Select(warning => new ProjectionWarning(
                 warning.RelativePath,
@@ -280,24 +381,44 @@ public sealed class DesktopProjectionService : IAsyncDisposable
                 warnings,
                 message,
                 source.CapturedAtUtc),
-            targets);
+            fileTargets,
+            itemTargets,
+            moveDestinations);
     }
 
     private static ProjectionFolder MapFolder(
         string rootPath,
         DesktopFolder folder,
-        IDictionary<string, ProjectionFileTarget> targets) =>
-        new(
+        IDictionary<string, ProjectionFileTarget> fileTargets,
+        IDictionary<string, ProjectionItemTarget> itemTargets,
+        IDictionary<string, ProjectionMoveDestinationTarget> moveDestinations)
+    {
+        var projection = new ProjectionFolder(
             folder.Id,
             folder.Name,
             folder.RelativePath,
             false,
-            folder.Files.Select(file => MapFile(rootPath, file, targets)).ToArray());
+            folder.Files
+                .Select(file => MapFile(rootPath, file, fileTargets, itemTargets))
+                .ToArray());
+        var absolutePath = Path.GetFullPath(Path.Combine(rootPath, folder.RelativePath));
+        itemTargets[folder.Id] = new ProjectionItemTarget(
+            folder.Id,
+            rootPath,
+            absolutePath,
+            folder.RelativePath,
+            folder.Name,
+            Wallpaper.Core.FileOperations.FileCommandItemKind.Folder);
+        moveDestinations[folder.Id] =
+            new ProjectionMoveDestinationTarget(folder.Id, rootPath, folder.RelativePath);
+        return projection;
+    }
 
     private static ProjectionFile MapFile(
         string rootPath,
         DesktopFile file,
-        IDictionary<string, ProjectionFileTarget> targets)
+        IDictionary<string, ProjectionFileTarget> fileTargets,
+        IDictionary<string, ProjectionItemTarget> itemTargets)
     {
         var encodedId = Uri.EscapeDataString(file.Id);
         var projection = new ProjectionFile(
@@ -312,7 +433,15 @@ public sealed class DesktopProjectionService : IAsyncDisposable
                 ? $"/visual/thumbnail/{encodedId}"
                 : null);
         var absolutePath = Path.GetFullPath(Path.Combine(rootPath, file.RelativePath));
-        targets[file.Id] = new ProjectionFileTarget(file.Id, rootPath, absolutePath, projection);
+        fileTargets[file.Id] =
+            new ProjectionFileTarget(file.Id, rootPath, absolutePath, projection);
+        itemTargets[file.Id] = new ProjectionItemTarget(
+            file.Id,
+            rootPath,
+            absolutePath,
+            file.RelativePath,
+            file.Name,
+            Wallpaper.Core.FileOperations.FileCommandItemKind.File);
         return projection;
     }
 

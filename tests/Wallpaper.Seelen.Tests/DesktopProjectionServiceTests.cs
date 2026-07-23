@@ -1,3 +1,4 @@
+using Wallpaper.Core.FileOperations;
 using Wallpaper.Infrastructure.Windows.Settings;
 
 namespace Wallpaper.Seelen.Tests;
@@ -35,6 +36,19 @@ public sealed class DesktopProjectionServiceTests : IDisposable
         Assert.NotNull(target);
         Assert.Equal(snapshot.RootPath, target.RootPath);
         Assert.Equal(Path.Combine(snapshot.RootPath, "note.txt"), target.AbsolutePath);
+        Assert.True(service.TryGetItem(note.Id, out var noteTarget));
+        Assert.Equal(FileCommandItemKind.File, noteTarget!.Kind);
+        var work = Assert.Single(snapshot.Folders);
+        Assert.True(service.TryGetItem(work.Id, out var workTarget));
+        Assert.Equal(FileCommandItemKind.Folder, workTarget!.Kind);
+        Assert.Equal("Work", workTarget.RelativePath);
+        Assert.True(service.TryGetMoveDestination(work.Id, out var workDestination));
+        Assert.Equal("Work", workDestination!.RelativeFolderPath);
+        Assert.True(service.TryGetMoveDestination(
+            snapshot.LooseFiles.Id,
+            out var rootDestination));
+        Assert.Null(rootDestination!.RelativeFolderPath);
+        Assert.False(service.TryGetItem(snapshot.LooseFiles.Id, out _));
     }
 
     [Fact]

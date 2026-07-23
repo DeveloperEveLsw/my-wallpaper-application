@@ -11,7 +11,8 @@
 > 이 문서는 보존된 Wallpaper Engine/WPF 전체 기능 기준이다. 현재 Seelen M1·M2 제품
 > 경로에서는 지속 설정을 Seelen 위젯 설정 GUI가 소유하며, 우측 상단 숨은 설정 패널을
 > 사용하지 않는다. Seelen 설정·프로토콜의 현재 결정은
-> [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md)를 따른다.
+> [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md)와
+> [ADR 0015](decisions/0015-seelen-m3-m4-command-path.md)를 따른다.
 
 ## 1. 제품 목적
 

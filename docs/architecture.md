@@ -3,10 +3,12 @@
 - 상태: Seelen UI 제품 경로 구현 기준, Wallpaper Engine/WPF 경로 보존
 - 원칙: Seelen UI 설정·표시, .NET Companion 파일 시스템 경계, 실제 파일 시스템 우선
 
-> 2026-07-24 Seelen UI 위젯 + .NET Companion M0를 통과했고 M1·M2 제품 경로를
-> 구현했다. 새 구조는 [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md)를 따른다.
-> 아래 1.1 이후의 Wallpaper Engine/WPF 구조는 Seelen 실기기 전환 검수가 끝날 때까지
-> 보존한다.
+> 2026-07-24 Seelen UI 위젯 + .NET Companion M0를 통과했고 M1·M2 읽기 경로와
+> M3·M4 파일 명령 경로를 구현했다. 읽기 구조는
+> [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md), 명령 구조는
+> [ADR 0015](decisions/0015-seelen-m3-m4-command-path.md)를 따른다.
+> 아래 1.1 이후의 Wallpaper Engine/WPF 구조는 Seelen M3 이후의 재사용 자산과 회귀
+> 근거로 보존한다.
 
 ## 1. 구성 개요
 
@@ -18,7 +20,7 @@ Seelen Settings ── widget config ──┐
 Wallpaper.Seelen.Widgets ── authenticated WebSocket/HTTP
                                    │
                                    ▼
-Wallpaper.Seelen.Companion ── projection · watcher · settings · Shell visual
+Wallpaper.Seelen.Companion ── projection · commands · watcher · settings · Shell visual
                                    │
                                    ▼
                            Windows File System
@@ -29,6 +31,13 @@ Wallpaper.Seelen.Companion ── projection · watcher · settings · Shell vis
 검증된 루트와 Dock 폴더 순서를 앱 로컬 JSON에 보존한다. 정상 연결·watcher 상태는
 표시하지 않으며 연결, watcher 또는 루트 오류 때만 위젯의 재시도 패널을 연다. 숨은
 설정 hotspot과 위젯 내부 설정 패널은 Seelen 제품 경로에 존재하지 않는다.
+
+M3·M4 명령은 프로토콜 4의 인증된 `itemCommand`로 전달한다. 위젯은 실제 경로 대신
+현재 projection ID만 보내며 Companion이 파일·실제 폴더 항목과 루트·폴더 이동 목적지를
+별도 레지스트리에서 다시 해석한다. 명령은 직렬 실행하고 최근 `requestId` 결과를
+제한적으로 보존해 동일 변경의 이중 실행을 막는다. 이름 변경, recycle과 move의 성공·
+실패 뒤에는 전체 snapshot을 다시 만든다. 세부 결정은
+[ADR 0015](decisions/0015-seelen-m3-m4-command-path.md)를 따른다.
 
 보존된 Wallpaper Engine/WPF 경로는 다음과 같다.
 

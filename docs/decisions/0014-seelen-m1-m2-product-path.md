@@ -1,6 +1,6 @@
 # ADR 0014: Seelen M1·M2 제품 경로와 읽기 전용 프로젝션
 
-- 상태: 구현됨, Windows 실기기 검수 대기
+- 상태: 승인됨, 구현·Windows 실기기 검수 완료
 - 결정일: 2026-07-24
 - 적용 범위: Seelen 제품 Companion과 Desktop 위젯의 M1·M2
 
@@ -66,3 +66,10 @@ Wallpaper.Seelen.Companion (Windows)
 WSL에서는 projection, watcher, 설정, 1,200개 항목, 제품 Companion Windows-target
 compile과 위젯 bundle을 검증한다. Seelen 표시, Windows Shell visual의 실제 결과,
 DPI/input과 Explorer 외부 변경은 Windows 실기기 검수로 분리한다.
+
+## 완료 판정
+
+2026-07-24 M1·M2 자동 검증과 Windows Seelen 사용자 검수를 완료했다. 사용자 검수에서
+발견한 visual 재진입, 입력 투과, 강조색, `…` 정렬, 파일 열기와 표시 이름 문제를 수정한
+뒤 재검수했으며, 지속 설정을 Seelen 설정 GUI로 통합한 상태를 M2 기준선으로 확정한다.
+후속 기능은 이 경계를 유지한 채 M3부터 별도 범위로 진행한다.

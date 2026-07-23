@@ -69,7 +69,8 @@ button,
 }
 
 .error-panel,
-.file-modal {
+.file-modal,
+.transient-surface {
   border: 1px solid rgb(255 255 255 / 33%);
   background: rgb(26 33 49 / 90%);
   box-shadow: 0 12px 34px rgb(0 0 0 / 35%);
@@ -98,6 +99,21 @@ button,
 
 .glass-button:active {
   background: rgb(255 255 255 / 29%);
+}
+
+.glass-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.primary-button {
+  border-color: color-mix(in srgb, var(--folder-accent) 64%, white);
+  background: color-mix(in srgb, var(--folder-accent) 38%, transparent);
+}
+
+.danger-button {
+  border-color: rgb(255 142 151 / 48%);
+  background: rgb(160 45 57 / 38%);
 }
 
 .icon-button {
@@ -248,10 +264,20 @@ h2 {
 }
 
 .file-tile:hover,
-.file-tile:focus-visible {
+.file-tile:focus-visible,
+.file-tile.is-selected {
   border-color: rgb(255 255 255 / 26%);
   outline: none;
   background: rgb(255 255 255 / 13%);
+}
+
+.file-tile.is-selected {
+  border-color: color-mix(in srgb, var(--folder-accent) 72%, white);
+  background: color-mix(in srgb, var(--folder-accent) 22%, transparent);
+}
+
+.file-tile[aria-grabbed="true"] {
+  opacity: 0.5;
 }
 
 .file-visual {
@@ -368,6 +394,36 @@ h2 {
   opacity: 0.52;
 }
 
+.dock-card.file-drop-valid,
+.dock-card.file-drop-invalid {
+  border-radius: 16px;
+  transition:
+    background 120ms ease,
+    filter 120ms ease,
+    transform 120ms ease;
+}
+
+.dock-card.file-drop-valid {
+  background: rgb(86 200 141 / 12%);
+  filter: drop-shadow(0 0 8px rgb(86 200 141 / 26%));
+}
+
+.dock-card.file-drop-valid.file-drop-hover {
+  background: rgb(86 200 141 / 25%);
+  filter: drop-shadow(0 0 13px rgb(86 200 141 / 42%));
+  transform: translateY(-4px);
+}
+
+.dock-card.file-drop-invalid {
+  cursor: not-allowed;
+  background: rgb(255 102 116 / 13%);
+  filter: grayscale(0.25);
+}
+
+.dock-card.file-drop-invalid.file-drop-hover {
+  background: rgb(255 102 116 / 24%);
+}
+
 .folder-glyph,
 .loose-glyph {
   display: grid;
@@ -472,6 +528,135 @@ h2 {
   right: -1px;
 }
 
+.item-menu {
+  position: fixed;
+  z-index: 42;
+  display: grid;
+  width: 230px;
+  border-radius: 16px;
+  padding: 7px;
+  pointer-events: auto;
+  animation: menu-in 120ms ease-out;
+}
+
+.item-menu button {
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  padding: 9px 11px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+
+.item-menu button:hover,
+.item-menu button:focus-visible {
+  outline: none;
+  background: rgb(255 255 255 / 13%);
+}
+
+.item-menu .danger-command {
+  color: rgb(255 183 190 / 96%);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 5px 7px;
+  background: rgb(255 255 255 / 16%);
+}
+
+.dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  background: rgb(3 7 18 / 34%);
+  pointer-events: auto;
+}
+
+.command-dialog {
+  display: grid;
+  width: min(430px, calc(100vw - 40px));
+  gap: 16px;
+  border-radius: 22px;
+  padding: 22px;
+  animation: dialog-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.dialog-description {
+  color: rgb(207 220 238 / 75%);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.dialog-field {
+  display: grid;
+  gap: 7px;
+  color: rgb(207 220 238 / 78%);
+  font-size: 12px;
+}
+
+.dialog-field input {
+  width: 100%;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 12px;
+  outline: none;
+  background: rgb(5 11 24 / 48%);
+  padding: 10px 12px;
+  color: #f7f9ff;
+  font: inherit;
+  user-select: text;
+}
+
+.dialog-field input:focus {
+  border-color: color-mix(in srgb, var(--folder-accent) 72%, white);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--folder-accent) 22%, transparent);
+}
+
+.dialog-error {
+  min-height: 18px;
+  color: rgb(255 171 180 / 96%);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.file-drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  z-index: 60;
+  max-width: 260px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 12px;
+  background: rgb(26 33 49 / 94%);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 35%);
+  padding: 8px 12px;
+  color: #f7f9ff;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.visually-hidden {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -487,6 +672,20 @@ h2 {
   from {
     opacity: 0;
     transform: translate(-50%, 10px) scale(0.985);
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
   }
 }
 
