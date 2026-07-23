@@ -1,0 +1,23 @@
+id: "@wallpaper/m0-popup"
+icon: PiKeyboard
+metadata:
+  displayName:
+    en: Wallpaper M0 Keyboard Popup
+    ko: Wallpaper M0 키보드 Popup
+  description:
+    en: Focus and keyboard input technology spike.
+    ko: 포커스와 키보드 입력 기술 스파이크.
+  tags:
+    - popup
+    - keyboard
+    - m0
+  appTargetVersion: [2, 8, 0]
+instances: Single
+loader: ThirdParty
+preset: Popup
+hidden: true
+lazy: true
+html: !include index.html
+js: !include index.js
+css: !include index.css
+settings: []

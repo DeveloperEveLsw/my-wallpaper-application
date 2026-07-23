@@ -7,6 +7,10 @@
     <Project Path="src/Wallpaper.Rendering.Abstractions/Wallpaper.Rendering.Abstractions.csproj" />
     <Project Path="src/Wallpaper.Rendering.WebView/Wallpaper.Rendering.WebView.csproj" />
   </Folder>
+  <Folder Name="/spikes/seelen-m0/">
+    <Project Path="spikes/seelen-m0/companion/Wallpaper.Seelen.M0.Companion/Wallpaper.Seelen.M0.Companion.csproj" />
+    <Project Path="spikes/seelen-m0/companion/Wallpaper.Seelen.M0.Tests/Wallpaper.Seelen.M0.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Wallpaper.Core.Tests/Wallpaper.Core.Tests.csproj" />
     <Project Path="tests/Wallpaper.Hosts.Tests/Wallpaper.Hosts.Tests.csproj" />

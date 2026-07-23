@@ -1,0 +1,20 @@
+id: "@wallpaper/m0-desktop"
+icon: PiDesktop
+metadata:
+  displayName:
+    en: Wallpaper M0 Desktop
+    ko: Wallpaper M0 데스크톱
+  description:
+    en: Seelen Desktop and loopback Companion technology spike.
+    ko: Seelen Desktop 및 loopback Companion 기술 스파이크.
+  tags:
+    - desktop
+    - m0
+  appTargetVersion: [2, 8, 0]
+instances: ReplicaByMonitor
+loader: ThirdParty
+preset: Desktop
+html: !include index.html
+js: !include index.js
+css: !include index.css
+settings: []

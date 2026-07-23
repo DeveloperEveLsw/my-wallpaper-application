@@ -1,0 +1,38 @@
+<main id="m0-desktop" class="m0-card" aria-label="Wallpaper M0 기술 스파이크">
+  <header class="m0-header">
+    <div>
+      <p class="m0-eyebrow">SEELEN + .NET COMPANION</p>
+      <h1>M0 기술 스파이크</h1>
+    </div>
+    <button id="drag-handle" class="m0-drag" type="button" title="위젯 이동">
+      이동
+    </button>
+  </header>
+
+  <dl class="m0-facts">
+    <div><dt>상태</dt><dd id="connection-status" data-state="pending">초기화 중</dd></div>
+    <div><dt>Origin</dt><dd id="origin-value">확인 중</dd></div>
+    <div><dt>Host</dt><dd id="host-value">연결 전</dd></div>
+    <div><dt>Desktop</dt><dd id="desktop-root">연결 전</dd></div>
+    <div><dt>재연결</dt><dd id="reconnect-count">0</dd></div>
+  </dl>
+
+  <section class="m0-preview" aria-label="HTTP Blob 검증">
+    <figure>
+      <img id="icon-preview" alt="검증한 icon Blob" />
+      <figcaption>icon Blob</figcaption>
+    </figure>
+    <figure>
+      <img id="image-preview" alt="검증한 image Blob" />
+      <figcaption>image Blob</figcaption>
+    </figure>
+  </section>
+
+  <div class="m0-actions">
+    <button id="click-test" type="button">클릭 검증 <span id="click-count">0</span></button>
+    <button id="popup-test" type="button">키보드 Popup 열기</button>
+    <button id="reconnect-test" type="button">재연결</button>
+  </div>
+
+  <output id="test-log" aria-live="polite">위젯 런타임을 준비하고 있습니다.</output>
+</main>

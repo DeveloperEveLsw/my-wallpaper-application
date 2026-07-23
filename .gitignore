@@ -3,6 +3,11 @@
 **/obj/
 artifacts/
 
+# Node build output
+**/node_modules/
+spikes/seelen-m0/widgets/desktop/index.js
+spikes/seelen-m0/widgets/popup/index.js
+
 # Visual Studio and JetBrains user state
 .vs/
 .idea/
@@ -21,4 +26,3 @@ logs/
 .DS_Store
 Thumbs.db
 Desktop.ini
-

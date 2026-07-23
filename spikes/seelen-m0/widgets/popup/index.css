@@ -1,0 +1,68 @@
+:root {
+  color: #f7f9ff;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+body {
+  background: transparent;
+  padding: 12px;
+}
+
+.popup-card {
+  width: 330px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 22px;
+  background: rgb(15 20 34 / 94%);
+  box-shadow: 0 26px 72px rgb(0 0 0 / 46%);
+  padding: 20px;
+  backdrop-filter: blur(24px);
+}
+
+.popup-eyebrow {
+  color: #9fb4ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+h1 {
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+label,
+output {
+  display: block;
+  margin-top: 15px;
+  color: rgb(255 255 255 / 62%);
+  font-size: 12px;
+}
+
+input {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+  font: inherit;
+  padding: 10px 12px;
+  user-select: text;
+}
+
+input:focus {
+  border-color: #8aa5ff;
+  box-shadow: 0 0 0 3px rgb(102 134 255 / 18%);
+}
+
+button {
+  width: 100%;
+  margin-top: 16px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 12px;
+  background: rgb(123 151 255 / 18%);
+  color: inherit;
+  font: inherit;
+  padding: 9px 12px;
+  cursor: pointer;
+}

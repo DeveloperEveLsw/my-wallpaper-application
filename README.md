@@ -9,6 +9,8 @@ WPF 기반 데스크톱 애플리케이션이다.
 
 ## 현재 상태
 
+- Seelen UI `Desktop`/`Popup` 위젯 + .NET Companion 전환을 위한 M0 기술 스파이크 시작
+- M0 실기기 게이트 통과 전까지 기존 Wallpaper Engine/WPF WebView2/three.js 구현 보존
 - M6 Wallpaper Engine 로컬 Application Wallpaper 구현·Windows 실기기 검수 완료
 - WebView2/three.js 렌더 경로 검증용 `Baseline` 기본 장면 구현
 - WPF 애플리케이션이 제품 본체
@@ -43,6 +45,8 @@ WPF 기반 데스크톱 애플리케이션이다.
 - [Wallpaper Engine 호스트 수명주기 결정](docs/decisions/0010-wallpaper-engine-application-host.md)
 - [WebView2/three.js Visual Gallery 결정](docs/decisions/0011-webview-three-visual-gallery.md)
 - [Wallpaper Engine 우선 프레젠테이션 결정](docs/decisions/0012-wallpaper-engine-first-presentation.md)
+- [Seelen UI + Companion M0 결정](docs/decisions/0013-seelen-companion-m0-spike.md)
+- [M0 Seelen 검수 기록](docs/m0-seelen-validation.md)
 - [MVP 개발 계획](docs/mvp-development-plan.md)
 - [M5 검수 기록](docs/m5-validation.md)
 - [M6 검수 기록](docs/m6-validation.md)
