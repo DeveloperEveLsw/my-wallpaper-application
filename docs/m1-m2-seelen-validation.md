@@ -32,6 +32,31 @@ Linux용 `dotnet`이 PATH에 없다면 설치하거나 `WALLPAPER_DOTNET`을 지
 SDK를 WSL interop으로 사용할 때는 개별 build/test에 Windows 경로의 `dotnet.exe`를
 쓸 수 있지만, 최종 publish는 반드시 Windows 로컬 checkout에서 수행한다.
 
+## WPF UI 정합성
+
+2026-07-24 Seelen 제품 위젯의 표시 구조를 기존 WPF `WallpaperView` 기준으로
+정렬했다.
+
+- 위젯 창은 현재 모니터의 작업 영역 전체를 사용한다.
+- 시계는 상단 중앙 44px, Dock은 하단 중앙 96px 안전 영역에 표시한다.
+- Dock은 카드 배경과 파일 수를 제거하고 WPF 폴더 아이콘, 이름, 열린 상태 표시만
+  사용한다.
+- 실제 폴더 영역만 가로 스크롤하고 구분선과 가상 `…` 카드는 오른쪽에 고정한다.
+- 파일 모달은 Dock 위의 760×470 Glass 패널이며, 파일은 WPF와 같은 128×122 타일
+  격자로 표시한다.
+- 1,200개 파일 검수 경계는 타일 행 단위 DOM 가상화로 유지한다.
+- 설정은 우측 상단 72×72 진입 영역과 WPF의 루트·다시 스캔·상태 구성을 사용한다.
+
+`@wallpaper/desktop`은 작은 독립 위젯이 아니라 WPF 화면 구성을 재현하는 전체 작업
+영역 위젯이므로 창 자체의 사용자 drag 위치를 저장하지 않는다. 내부 배치는
+`desktop/index.css`의 `.desktop-clock`, `.dock`, `.file-modal`,
+`.settings-panel`에서 조정한다.
+
+일반적인 Seelen `Desktop` 위젯은 위젯이 제공한 drag handle에서
+`widget.window.startDragging()`을 호출해 이동한다. `Desktop` preset은 이동 뒤 마지막
+위치와 크기를 자동 저장·복원한다. 위젯에 drag handle이 없다면 Seelen 설정만으로
+콘텐츠 영역을 잡아 이동할 수 없으므로 위젯 구현에 handle을 추가해야 한다.
+
 ## Windows 배치
 
 Windows 로컬 checkout에서 PowerShell로 실행한다.
@@ -61,8 +86,7 @@ M0 Desktop 리소스는 제품 위젯과 ID가 다르지만 화면 중복을 피
 
 1. `@wallpaper/desktop`을 Desktop preset으로 활성화한다.
 2. 우측 상단에 1초 hover하여 설정 패널을 연다.
-3. `폴더 선택`이 Windows 네이티브 폴더 선택기를 여는지 확인한다. fixture를 선택하거나
-   `$fixture.RootPath`를 `루트 폴더`에 붙여 넣고 `경로 적용`을 누른다.
+3. `폴더 선택`이 Windows 네이티브 폴더 선택기를 여는지 확인하고 fixture를 선택한다.
 4. `Work`, `Photos`, `Empty`, `Bulk` 카드와 `…` 카드가 보이는지 확인한다.
 5. `…`를 열어 `loose-file.txt`만 보이는지 확인한다.
 6. `Work`를 열어 `report.txt`, `notes.md`는 보이고 `Nested-Ignored` 내용은 보이지

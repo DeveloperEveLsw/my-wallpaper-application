@@ -1,22 +1,39 @@
 import { invoke, SeelenCommand, Widget } from "@seelen-ui/lib";
+import { currentMonitor } from "@tauri-apps/api/window";
 
 const EXPECTED_ORIGIN = "http://tauri.localhost";
 const PORT_START = 43127;
 const PORT_COUNT = 9;
 const PROTOCOL_VERSION = 2;
-const ROW_HEIGHT = 58;
-const OVERSCAN = 8;
+const TILE_WIDTH = 128;
+const TILE_GAP = 8;
+const TILE_ROW_HEIGHT = 130;
+const OVERSCAN_ROWS = 3;
+const TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+});
+const DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  day: "numeric",
+  month: "long",
+  weekday: "long",
+  year: "numeric",
+});
 
 const widget = Widget.self;
-const app = document.getElementById("wallpaper-desktop");
 const dock = document.getElementById("dock");
+const dockFolders = document.getElementById("dock-folders");
+const dockLoose = document.getElementById("dock-loose");
 const panel = document.getElementById("settings-panel");
 const modal = document.getElementById("file-modal");
 const list = document.getElementById("file-list");
 const spacer = document.getElementById("file-list-spacer");
 const rows = document.getElementById("file-list-rows");
+const emptyFiles = document.getElementById("file-empty");
 const status = document.getElementById("connection-status");
 const rootPath = document.getElementById("root-path");
+const rootName = document.getElementById("root-name");
 const watchStatus = document.getElementById("watch-status");
 const statusMessage = document.getElementById("status-message");
 
@@ -32,30 +49,31 @@ let settingsHoverTimer = null;
 let draggedFolderId = null;
 const visualUrls = new Map();
 
-await widget.init({ autoSizeByContent: app });
+await widget.init({
+  saveAndRestoreLastRect: false,
+  useThemes: false,
+});
+await fitWidgetToWorkArea();
 bindUi();
+updateClock();
+setInterval(updateClock, 1000);
 await widget.ready();
 void reconnect("초기 연결");
 
 function bindUi() {
   const trigger = document.getElementById("settings-trigger");
   trigger.addEventListener("pointerenter", () => {
+    clearTimeout(settingsHoverTimer);
     settingsHoverTimer = setTimeout(() => {
-      panel.hidden = false;
+      openSettings();
     }, 1000);
   });
   trigger.addEventListener("pointerleave", () => clearTimeout(settingsHoverTimer));
   document.getElementById("settings-close").addEventListener("click", () => {
-    panel.hidden = true;
+    closeSettings();
   });
   document.getElementById("refresh-button").addEventListener("click", () => {
     sendAuthenticated({ type: "refresh" });
-  });
-  document.getElementById("root-apply").addEventListener("click", () => {
-    const nextRoot = document.getElementById("root-input").value.trim();
-    if (nextRoot) {
-      sendAuthenticated({ type: "setRoot", rootPath: nextRoot });
-    }
   });
   document.getElementById("root-choose").addEventListener("click", () => {
     sendAuthenticated({ type: "chooseRoot" });
@@ -66,12 +84,63 @@ function bindUi() {
       closeModal();
     }
   });
+  document.addEventListener("pointerdown", (event) => {
+    if (
+      !panel.hidden
+      && !panel.contains(event.target)
+      && !trigger.contains(event.target)
+    ) {
+      closeSettings();
+    }
+  });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !modal.hidden) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    if (!panel.hidden) {
+      closeSettings();
+    } else if (!modal.hidden) {
       closeModal();
     }
   });
   list.addEventListener("scroll", renderVisibleRows, { passive: true });
+  window.addEventListener("resize", () => {
+    if (!modal.hidden) {
+      updateVirtualGrid();
+    }
+  });
+}
+
+function openSettings() {
+  clearTimeout(settingsHoverTimer);
+  closeModal();
+  panel.hidden = false;
+}
+
+function closeSettings() {
+  clearTimeout(settingsHoverTimer);
+  panel.hidden = true;
+}
+
+async function fitWidgetToWorkArea() {
+  const monitor = await currentMonitor();
+  if (!monitor) {
+    return;
+  }
+
+  const { position, size } = monitor.workArea;
+  await widget.setPosition({
+    left: position.x,
+    top: position.y,
+    right: position.x + size.width,
+    bottom: position.y + size.height,
+  });
+}
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById("clock-time").textContent = TIME_FORMATTER.format(now);
+  document.getElementById("clock-date").textContent = DATE_FORMATTER.format(now);
 }
 
 async function reconnect(reason) {
@@ -124,7 +193,6 @@ async function reconnect(reason) {
     httpBaseUrl = connection.hello.httpBaseUrl;
     rootPath.textContent = connection.hello.desktopRoot;
     rootPath.title = connection.hello.desktopRoot;
-    document.getElementById("root-input").value = connection.hello.desktopRoot;
     updateWatch(connection.hello.watch);
     applySnapshot(connection.hello.snapshot);
     adoptSocket(currentGeneration);
@@ -276,25 +344,35 @@ function applySnapshot(nextSnapshot) {
 
   snapshot = nextSnapshot;
   if (snapshot.rootConfigured === false) {
-    panel.hidden = false;
+    openSettings();
   }
   pruneVisualUrls();
-  rootPath.textContent = snapshot.rootPath;
-  rootPath.title = snapshot.rootPath;
-  if (document.activeElement !== document.getElementById("root-input")) {
-    document.getElementById("root-input").value = snapshot.rootPath;
-  }
-  statusMessage.textContent = snapshot.message ?? "";
+  rootPath.textContent = snapshot.rootPath || "선택되지 않음";
+  rootPath.title = snapshot.rootPath || "선택되지 않음";
+  rootName.textContent = snapshot.rootName || "루트 미설정";
+  statusMessage.textContent = getSnapshotStatusText(snapshot);
   renderDock();
   if (!modal.hidden) {
     const selected = [...snapshot.folders, snapshot.looseFiles]
       .find((folder) => folder.id === modal.dataset.folderId);
     if (selected) {
-      openFolder(selected);
+      showFolder(selected, true);
     } else {
       closeModal();
     }
   }
+}
+
+function getSnapshotStatusText(current) {
+  if (current.message) {
+    return current.message;
+  }
+  if (current.state === "ready") {
+    const fileCount = [...current.folders, current.looseFiles]
+      .reduce((total, folder) => total + folder.files.length, 0);
+    return `${current.folders.length.toLocaleString()}개 폴더 · ${fileCount.toLocaleString()}개 파일`;
+  }
+  return "파일 상태를 확인하고 있습니다.";
 }
 
 function pruneVisualUrls() {
@@ -307,48 +385,69 @@ function pruneVisualUrls() {
   }
   for (const [key, url] of visualUrls) {
     if (!validKeys.has(key)) {
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(url.url);
       visualUrls.delete(key);
     }
   }
 }
 
 function renderDock() {
-  dock.replaceChildren();
-  const folders = [...snapshot.folders, snapshot.looseFiles];
-  if (folders.every((folder) => folder.files.length === 0)) {
+  dockFolders.replaceChildren();
+  dockLoose.replaceChildren();
+
+  if (snapshot.folders.length === 0) {
     const empty = document.createElement("div");
-    empty.className = "empty-card";
-    empty.textContent = snapshot.state === "ready" ? "표시할 파일이나 폴더가 없습니다." : snapshot.message;
-    dock.append(empty);
-    return;
+    empty.className = "dock-empty";
+    empty.textContent = snapshot.state === "ready" ? "폴더 없음" : "불러오는 중";
+    dockFolders.append(empty);
   }
 
-  for (const folder of folders) {
-    const button = document.createElement("button");
-    button.className = "dock-card";
-    if (folder.isLooseFiles) {
-      button.classList.add("loose-files-card");
-    }
-    button.type = "button";
-    button.title = folder.name;
-    button.draggable = !folder.isLooseFiles;
-    button.dataset.folderId = folder.id;
-    button.innerHTML = `
-      <span class="folder-glyph" aria-hidden="true">${folder.isLooseFiles ? "•••" : "▰"}</span>
-      <span class="dock-name"></span>
-      <span class="dock-count">${folder.files.length}개</span>
-    `;
-    button.querySelector(".dock-name").textContent = folder.name;
-    button.addEventListener("click", () => openFolder(folder));
+  for (const folder of snapshot.folders) {
+    const button = createDockButton(folder);
     bindFolderDrag(button, folder);
-    if (folder.isLooseFiles) {
-      const separator = document.createElement("span");
-      separator.className = "dock-separator";
-      separator.setAttribute("aria-hidden", "true");
-      dock.append(separator);
-    }
-    dock.append(button);
+    dockFolders.append(button);
+  }
+
+  dockLoose.append(createDockButton(snapshot.looseFiles));
+  updateDockSelection();
+}
+
+function createDockButton(folder) {
+  const button = document.createElement("button");
+  button.className = "dock-card";
+  button.type = "button";
+  button.title = folder.isLooseFiles ? "루트 파일" : folder.name;
+  button.draggable = !folder.isLooseFiles;
+  button.dataset.folderId = folder.id;
+  button.setAttribute("aria-pressed", "false");
+  button.innerHTML = folder.isLooseFiles
+    ? `
+      <span class="loose-glyph" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="dock-name"></span>
+      <span class="open-indicator" aria-hidden="true"></span>
+    `
+    : `
+      <span class="folder-glyph" aria-hidden="true">
+        <svg viewBox="0 0 58 58" focusable="false">
+          <path d="M4 15h18l6-7h24c2.7 0 4 1.7 4 5v34c0 3.3-1.7 5-5 5H7c-3.3 0-5-1.7-5-5V20c0-3.3.7-5 2-5Z" fill="#ECA4C7"/>
+          <path d="M7 20h44c3.3 0 5 1.7 5 5v22c0 3.3-1.7 5-5 5H7c-3.3 0-5-1.7-5-5V25c0-3.3 1.7-5 5-5Z" fill="#B7659D"/>
+        </svg>
+      </span>
+      <span class="dock-name"></span>
+      <span class="open-indicator" aria-hidden="true"></span>
+    `;
+  button.querySelector(".dock-name").textContent = folder.name;
+  button.addEventListener("click", () => toggleFolder(folder));
+  return button;
+}
+
+function updateDockSelection() {
+  const activeId = modal.hidden ? null : modal.dataset.folderId;
+  for (const button of dock.querySelectorAll(".dock-card")) {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.folderId === activeId),
+    );
   }
 }
 
@@ -363,15 +462,26 @@ function bindFolderDrag(button, folder) {
   button.addEventListener("dragend", () => {
     draggedFolderId = null;
     button.removeAttribute("aria-grabbed");
+    clearDockDropIndicators();
   });
   button.addEventListener("dragover", (event) => {
     if (draggedFolderId && draggedFolderId !== folder.id) {
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
+      clearDockDropIndicators();
+      const bounds = button.getBoundingClientRect();
+      const insertAfter = event.clientX >= bounds.left + bounds.width / 2;
+      button.classList.add(insertAfter ? "drag-after" : "drag-before");
+    }
+  });
+  button.addEventListener("dragleave", (event) => {
+    if (!button.contains(event.relatedTarget)) {
+      button.classList.remove("drag-before", "drag-after");
     }
   });
   button.addEventListener("drop", (event) => {
     event.preventDefault();
+    clearDockDropIndicators();
     const order = snapshot.folders.map((item) => item.id);
     const source = order.indexOf(draggedFolderId);
     let target = order.indexOf(folder.id);
@@ -385,7 +495,22 @@ function bindFolderDrag(button, folder) {
   });
 }
 
-function openFolder(folder) {
+function clearDockDropIndicators() {
+  for (const card of dockFolders.querySelectorAll(".dock-card")) {
+    card.classList.remove("drag-before", "drag-after");
+  }
+}
+
+function toggleFolder(folder) {
+  if (!modal.hidden && modal.dataset.folderId === folder.id) {
+    closeModal();
+    return;
+  }
+  showFolder(folder, false);
+}
+
+function showFolder(folder, preserveScroll) {
+  const previousScrollTop = preserveScroll ? list.scrollTop : 0;
   modal.hidden = false;
   modal.dataset.folderId = folder.id;
   document.getElementById("modal-title").textContent = folder.isLooseFiles
@@ -393,9 +518,10 @@ function openFolder(folder) {
     : folder.name;
   document.getElementById("modal-summary").textContent = `${folder.files.length.toLocaleString()}개 파일`;
   activeFiles = folder.files;
-  list.scrollTop = 0;
-  spacer.style.height = `${activeFiles.length * ROW_HEIGHT}px`;
-  renderVisibleRows();
+  emptyFiles.hidden = activeFiles.length !== 0;
+  list.scrollTop = previousScrollTop;
+  updateVirtualGrid();
+  updateDockSelection();
   list.focus();
 }
 
@@ -404,39 +530,81 @@ function closeModal() {
   modal.removeAttribute("data-folder-id");
   activeFiles = [];
   rows.replaceChildren();
+  emptyFiles.hidden = true;
+  updateDockSelection();
+}
+
+function updateVirtualGrid() {
+  const columnCount = getFileColumnCount();
+  const rowCount = Math.ceil(activeFiles.length / columnCount);
+  rows.style.setProperty("--file-columns", String(columnCount));
+  spacer.style.height = `${rowCount * TILE_ROW_HEIGHT}px`;
+  renderVisibleRows();
+}
+
+function getFileColumnCount() {
+  return Math.max(
+    1,
+    Math.floor((list.clientWidth + TILE_GAP) / (TILE_WIDTH + TILE_GAP)),
+  );
 }
 
 function renderVisibleRows() {
-  const first = Math.max(0, Math.floor(list.scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const visible = Math.ceil(list.clientHeight / ROW_HEIGHT) + OVERSCAN * 2;
-  const last = Math.min(activeFiles.length, first + visible);
+  const columnCount = getFileColumnCount();
+  const rowCount = Math.ceil(activeFiles.length / columnCount);
+  const firstRow = Math.max(
+    0,
+    Math.floor(list.scrollTop / TILE_ROW_HEIGHT) - OVERSCAN_ROWS,
+  );
+  const visibleRows = Math.ceil(list.clientHeight / TILE_ROW_HEIGHT)
+    + OVERSCAN_ROWS * 2;
+  const lastRow = Math.min(rowCount, firstRow + visibleRows);
+
   rows.replaceChildren();
-  for (let index = first; index < last; index += 1) {
-    const file = activeFiles[index];
+  rows.style.setProperty("--file-columns", String(columnCount));
+
+  for (let rowIndex = firstRow; rowIndex < lastRow; rowIndex += 1) {
     const row = document.createElement("div");
-    row.className = "file-row";
-    row.style.top = `${index * ROW_HEIGHT}px`;
-    const image = document.createElement("img");
-    image.alt = "";
-    image.decoding = "async";
-    const label = document.createElement("span");
-    label.className = "file-name";
-    label.textContent = file.name;
-    label.title = file.name;
-    const metadata = document.createElement("span");
-    metadata.className = "file-meta";
-    metadata.textContent = formatBytes(file.length);
-    row.append(image, label, metadata);
+    row.className = "file-grid-row";
+    row.style.top = `${rowIndex * TILE_ROW_HEIGHT}px`;
+    const start = rowIndex * columnCount;
+    const end = Math.min(activeFiles.length, start + columnCount);
+
+    for (let fileIndex = start; fileIndex < end; fileIndex += 1) {
+      const file = activeFiles[fileIndex];
+      const tile = document.createElement("div");
+      tile.className = "file-tile";
+      tile.tabIndex = 0;
+      tile.title = file.name;
+
+      const visual = document.createElement("span");
+      visual.className = "file-visual";
+      const fallback = document.createElement("span");
+      fallback.className = "file-extension";
+      fallback.textContent = file.extension.replace(".", "").toUpperCase() || "FILE";
+      const image = document.createElement("img");
+      image.alt = "";
+      image.decoding = "async";
+      image.hidden = true;
+      visual.append(fallback, image);
+
+      const label = document.createElement("span");
+      label.className = "file-name";
+      label.textContent = file.name;
+      tile.append(visual, label);
+      row.append(tile);
+      void loadVisual(file, { fallback, image, label, tile, visual });
+    }
+
     rows.append(row);
-    void loadVisual(file, image);
   }
 }
 
-async function loadVisual(file, image) {
-  const path = file.thumbnailPath ?? file.iconPath;
+async function loadVisual(file, elements, requestedPath = null) {
+  const path = requestedPath ?? file.thumbnailPath ?? file.iconPath;
   const cacheKey = `${file.id}|${file.lastWriteTimeUtc}|${path}`;
   if (visualUrls.has(cacheKey)) {
-    image.src = visualUrls.get(cacheKey);
+    applyVisual(elements, visualUrls.get(cacheKey));
     return;
   }
 
@@ -446,16 +614,49 @@ async function loadVisual(file, image) {
       headers: { Authorization: `Bearer ${sessionToken}` },
     });
     if (!response.ok) throw new Error();
-    const url = URL.createObjectURL(await response.blob());
-    visualUrls.set(cacheKey, url);
-    image.src = url;
+    const result = {
+      displayName: decodeDisplayName(
+        response.headers.get("X-Wallpaper-Display-Name"),
+      ),
+      presentation: response.headers.get("X-Wallpaper-Presentation"),
+      url: URL.createObjectURL(await response.blob()),
+    };
+    visualUrls.set(cacheKey, result);
+    applyVisual(elements, result);
   } catch {
     if (path !== file.iconPath) {
-      const fallback = { ...file, thumbnailPath: null };
-      await loadVisual(fallback, image);
+      await loadVisual(file, elements, file.iconPath);
     } else {
-      image.alt = file.extension.replace(".", "").toUpperCase() || "FILE";
+      elements.image.hidden = true;
+      elements.fallback.hidden = false;
     }
+  }
+}
+
+function applyVisual(elements, result) {
+  if (!elements.tile.isConnected) {
+    return;
+  }
+  elements.visual.classList.toggle(
+    "is-fullbleed",
+    result.presentation === "fullbleed",
+  );
+  elements.image.src = result.url;
+  elements.image.hidden = false;
+  elements.fallback.hidden = true;
+  if (result.displayName) {
+    elements.label.textContent = result.displayName;
+  }
+}
+
+function decodeDisplayName(encoded) {
+  if (!encoded) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
   }
 }
 
@@ -484,12 +685,6 @@ function closeSocket() {
 function setConnection(text, state) {
   status.textContent = text;
   status.dataset.state = state;
-}
-
-function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
 }
 
 function encodeBase64Url(bytes) {

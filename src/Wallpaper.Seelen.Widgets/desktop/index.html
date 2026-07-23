@@ -1,46 +1,53 @@
 <main id="wallpaper-desktop" aria-label="Wallpaper Desktop">
+  <section class="desktop-clock" aria-label="현재 날짜와 시간">
+    <time id="clock-time">00:00</time>
+    <time id="clock-date">날짜</time>
+  </section>
+
   <div id="settings-trigger" aria-hidden="true"></div>
-  <aside id="settings-panel" class="glass settings-panel" hidden>
-    <header>
-      <div>
-        <p class="eyebrow">WALLPAPER DESKTOP</p>
-        <h1>파일 Dock</h1>
-      </div>
-      <button id="settings-close" type="button" aria-label="설정 닫기">×</button>
+  <aside id="settings-panel" class="settings-panel" aria-label="설정" hidden>
+    <header class="panel-header">
+      <h1>설정</h1>
+      <button id="settings-close" class="glass-button icon-button" type="button" aria-label="설정 닫기">×</button>
     </header>
-    <dl>
-      <div><dt>상태</dt><dd id="connection-status">연결 중</dd></div>
-      <div><dt>루트</dt><dd id="root-path">확인 중</dd></div>
-      <div><dt>감시</dt><dd id="watch-status">확인 중</dd></div>
-    </dl>
-    <label class="root-field">
-      <span>루트 폴더</span>
-      <input id="root-input" type="text" spellcheck="false" autocomplete="off" />
-    </label>
-    <div class="root-actions">
-      <button id="root-choose" class="primary-button" type="button">폴더 선택</button>
-      <button id="root-apply" class="primary-button" type="button">경로 적용</button>
+
+    <p class="field-label">월페이퍼 루트</p>
+    <div id="root-path" class="root-path" title="선택되지 않음">선택되지 않음</div>
+
+    <div class="settings-actions">
+      <button id="root-choose" class="glass-button" type="button">폴더 선택</button>
+      <button id="refresh-button" class="glass-button" type="button">다시 스캔</button>
     </div>
-    <button id="refresh-button" class="primary-button" type="button">전체 다시 읽기</button>
-    <output id="status-message" aria-live="polite"></output>
+
+    <section class="root-status" aria-live="polite">
+      <strong id="root-name">루트 미설정</strong>
+      <span id="status-message">루트 폴더를 선택하세요.</span>
+    </section>
+    <p id="host-status" class="host-status">
+      <span id="connection-status" data-state="pending">연결 중</span>
+      <span aria-hidden="true"> · </span>
+      <span id="watch-status">감시 확인 중</span>
+    </p>
   </aside>
 
-  <section id="dock" class="glass dock" aria-label="폴더 Dock"></section>
-
-  <div id="file-modal" class="modal-backdrop" hidden>
-    <section class="glass file-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <header>
-        <div>
-          <p class="eyebrow">FILES</p>
-          <h2 id="modal-title">파일</h2>
-        </div>
-        <button id="modal-close" type="button" aria-label="닫기">×</button>
+  <div id="file-modal" class="modal-layer" hidden>
+    <section class="file-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="panel-header modal-header">
+        <h2 id="modal-title">파일</h2>
+        <span id="modal-summary">0개 파일</span>
+        <button id="modal-close" class="glass-button icon-button" type="button" aria-label="닫기">×</button>
       </header>
-      <p id="modal-summary"></p>
-      <div id="file-list" class="file-list" tabindex="0">
+      <div id="file-list" class="file-list" tabindex="0" aria-label="파일 목록">
         <div id="file-list-spacer"></div>
         <div id="file-list-rows"></div>
+        <p id="file-empty" class="file-empty" hidden>이 폴더에는 표시할 파일이 없습니다.</p>
       </div>
     </section>
   </div>
+
+  <section id="dock" class="dock" aria-label="폴더 Dock">
+    <div id="dock-folders" class="dock-folders"></div>
+    <span class="dock-separator" aria-hidden="true"></span>
+    <div id="dock-loose" class="dock-loose"></div>
+  </section>
 </main>
