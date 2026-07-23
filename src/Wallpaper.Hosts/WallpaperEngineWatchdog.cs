@@ -6,7 +6,8 @@ namespace Wallpaper.Hosts;
 
 public static class WallpaperEngineWatchdog
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan InputPollInterval = TimeSpan.FromMilliseconds(16);
+    private static readonly TimeSpan StateReconcileInterval = TimeSpan.FromMilliseconds(250);
     private const string WatchdogArgument = "--wallpaper-engine-watchdog";
     private const string ApplicationProcessArgument = "--application-process-id";
     private const string EngineProcessArgument = "--engine-process-id";
@@ -141,24 +142,78 @@ public static class WallpaperEngineWatchdog
         using (engineProcess)
         {
             ValidateTargets(applicationProcess, engineProcess);
-
-            while (!applicationProcess.HasExited && !engineProcess.HasExited)
+            var inputRouterState = new WallpaperEngineInputRouterState();
+            var lastStateReconcile = 0L;
+            var routingFaulted = false;
+            var applicationExited = false;
+            var engineExited = false;
+            // PeriodicTimer has one serial consumer and coalesces delayed ticks, so a slow
+            // native reconciliation cannot create overlapping callbacks or queued worker threads.
+            using var inputTimer = new PeriodicTimer(InputPollInterval);
+            try
             {
-                await Task.Delay(PollInterval, cancellationToken);
-            }
-
-            if (engineProcess.HasExited && !applicationProcess.HasExited)
-            {
-                applicationProcess.Kill(entireProcessTree: false);
-                while (!applicationProcess.HasExited)
+                while (!applicationExited && !engineExited)
                 {
-                    await Task.Delay(PollInterval, cancellationToken);
+                    var forceReconcile = lastStateReconcile == 0 ||
+                        Stopwatch.GetElapsedTime(lastStateReconcile) >= StateReconcileInterval;
+                    if (forceReconcile)
+                    {
+                        lastStateReconcile = Stopwatch.GetTimestamp();
+                        applicationExited = applicationProcess.HasExited;
+                        engineExited = engineProcess.HasExited;
+                        if (applicationExited || engineExited)
+                        {
+                            break;
+                        }
+                    }
+
+                    try
+                    {
+                        WindowsWallpaperEngineInterop.UpdateInteractiveInputFromWatchdog(
+                            inputRouterState,
+                            options.ApplicationProcessId,
+                            options.EngineProcessId,
+                            options.ParentWindowHandle,
+                            forceReconcile);
+                        if (routingFaulted)
+                        {
+                            Trace.TraceInformation(
+                                "Wallpaper Engine watchdog input routing recovered.");
+                            routingFaulted = false;
+                        }
+                    }
+                    catch (Exception exception) when (
+                        exception is Win32Exception or InvalidOperationException)
+                    {
+                        if (!routingFaulted)
+                        {
+                            Trace.TraceWarning(
+                                $"Wallpaper Engine watchdog input routing failed: {exception.Message}");
+                            routingFaulted = true;
+                        }
+                    }
+
+                    if (!await inputTimer.WaitForNextTickAsync(cancellationToken))
+                    {
+                        break;
+                    }
+                }
+
+                if (engineExited && !applicationExited)
+                {
+                    applicationProcess.Kill(entireProcessTree: false);
+                    await applicationProcess.WaitForExitAsync(cancellationToken);
                 }
             }
-
-            WindowsWallpaperEngineInterop.RestoreInteractiveInputAfterProcessExit(
-                options.ParentWindowHandle,
-                options.WorkerWindowHandle);
+            finally
+            {
+                var workerWindow = WindowsWallpaperEngineInterop.GetWatchdogWorkerWindow(
+                    inputRouterState,
+                    options.WorkerWindowHandle);
+                WindowsWallpaperEngineInterop.RestoreInteractiveInputAfterProcessExit(
+                    options.ParentWindowHandle,
+                    workerWindow);
+            }
         }
     }
 

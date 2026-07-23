@@ -32,14 +32,11 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     private const uint NoZOrder = 0x0004;
     private const uint NoOwnerZOrder = 0x0200;
     private const uint DwmWindowAttributeCloaked = 14;
-    private const int LowLevelMouseHookId = 14;
-    private const uint QuitMessage = 0x0012;
 
     private readonly object _interactiveInputLock = new();
     private nint _interactiveIntermediateWindow;
     private nint _interactiveWorkerWindow;
     private nint _desktopViewWindow;
-    private LowLevelMouseHook? _mouseInputHook;
     private bool _interactiveWorkerRaised;
 
     public bool IsWindow(nint windowHandle) => NativeIsWindow(windowHandle);
@@ -253,7 +250,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 CaptureInteractiveDesktop(parentWindowHandle);
             }
 
-            _mouseInputHook ??= new LowLevelMouseHook(RouteMouseInput);
             if (!GetCursorPos(out var cursorPosition))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -265,15 +261,10 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
 
     public void RestoreInteractiveInput()
     {
-        LowLevelMouseHook? mouseInputHook;
         lock (_interactiveInputLock)
         {
-            mouseInputHook = _mouseInputHook;
-            _mouseInputHook = null;
             RestoreInteractiveInputCore();
         }
-
-        mouseInputHook?.Dispose();
     }
 
     internal static nint GetInteractiveWorkerWindow(nint intermediateWindow)
@@ -300,6 +291,99 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
 
         return workerWindow;
     }
+
+    internal static void UpdateInteractiveInputFromWatchdog(
+        WallpaperEngineInputRouterState state,
+        int applicationProcessId,
+        int engineProcessId,
+        nint intermediateWindow,
+        bool forceReconcile)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        if (forceReconcile)
+        {
+            if (!TryResolveInteractiveDesktop(
+                    intermediateWindow,
+                    engineProcessId,
+                    out var resolvedWorkerWindow,
+                    out var desktopView))
+            {
+                RestoreWatchdogRouterState(state);
+                return;
+            }
+
+            if (state.WorkerWindowHandle != resolvedWorkerWindow)
+            {
+                RestoreWatchdogRouterState(state);
+                state.WorkerWindowHandle = resolvedWorkerWindow;
+            }
+
+            state.DesktopViewWindowHandle = desktopView;
+            if (!HasDirectChildOwnedByProcess(intermediateWindow, applicationProcessId))
+            {
+                state.ClearTargetRectangle();
+            }
+            else
+            {
+                if (!GetWindowRect(intermediateWindow, out var intermediateRectangle))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                state.SetTargetRectangle(
+                    intermediateRectangle.Left,
+                    intermediateRectangle.Top,
+                    intermediateRectangle.Right,
+                    intermediateRectangle.Bottom);
+            }
+        }
+
+        if (!state.HasTargetRectangle)
+        {
+            if (state.HasAppliedState &&
+                state.ShouldApply(enableInput: false, forceReconcile))
+            {
+                SetInteractiveWorkerState(
+                    state.WorkerWindowHandle,
+                    enableInput: false,
+                    ref state.InteractiveWorkerRaised);
+                state.MarkApplied(enableInput: false);
+            }
+
+            return;
+        }
+
+        if (!GetCursorPos(out var cursorPosition))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        var enableInput = WallpaperEngineInputScope.Contains(
+            cursorPosition.X,
+            cursorPosition.Y,
+            state.TargetLeft,
+            state.TargetTop,
+            state.TargetRight,
+            state.TargetBottom);
+        if (!state.ShouldApply(enableInput, forceReconcile))
+        {
+            return;
+        }
+
+        SetInteractiveWorkerState(
+            state.WorkerWindowHandle,
+            enableInput,
+            ref state.InteractiveWorkerRaised);
+        state.MarkApplied(enableInput);
+    }
+
+    internal static nint GetWatchdogWorkerWindow(
+        WallpaperEngineInputRouterState state,
+        nint fallbackWorkerWindow) =>
+        state.WorkerWindowHandle != 0
+            ? state.WorkerWindowHandle
+            : fallbackWorkerWindow;
 
     internal static void RestoreInteractiveInputAfterProcessExit(
         nint intermediateWindow,
@@ -383,20 +467,6 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         }
     }
 
-    private void RouteMouseInput(int x, int y)
-    {
-        lock (_interactiveInputLock)
-        {
-            if (_interactiveIntermediateWindow == 0 ||
-                _interactiveWorkerWindow == 0)
-            {
-                return;
-            }
-
-            UpdateInteractiveWorker(x, y);
-        }
-    }
-
     private void UpdateInteractiveWorker(int cursorX, int cursorY)
     {
         if (!GetWindowRect(_interactiveIntermediateWindow, out var intermediateRectangle))
@@ -411,12 +481,17 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             intermediateRectangle.Top,
             intermediateRectangle.Right,
             intermediateRectangle.Bottom);
-        SetInteractiveWorkerState(enableInput);
+        SetInteractiveWorkerState(
+            _interactiveWorkerWindow,
+            enableInput,
+            ref _interactiveWorkerRaised);
     }
 
-    private void SetInteractiveWorkerState(bool enableInput)
+    private static void SetInteractiveWorkerState(
+        nint workerWindow,
+        bool enableInput,
+        ref bool interactiveWorkerRaised)
     {
-        var workerWindow = _interactiveWorkerWindow;
         if (!NativeIsWindow(workerWindow))
         {
             throw new InvalidOperationException("상호작용할 Desktop HWND가 더 이상 유효하지 않습니다.");
@@ -451,12 +526,12 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
 
         if (!enableInput)
         {
-            _interactiveWorkerRaised = false;
+            interactiveWorkerRaised = false;
         }
 
         if (!stateChanged &&
             !styleChanged &&
-            (!enableInput || _interactiveWorkerRaised))
+            (!enableInput || interactiveWorkerRaised))
         {
             return;
         }
@@ -484,7 +559,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
 
-        _interactiveWorkerRaised = enableInput;
+        interactiveWorkerRaised = enableInput;
     }
 
     private void RestoreInteractiveInputCore()
@@ -530,6 +605,72 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
                 0,
                 NoMove | NoSize | NoActivate | NoOwnerZOrder | FrameChanged);
         }
+    }
+
+    private static bool TryResolveInteractiveDesktop(
+        nint intermediateWindow,
+        int engineProcessId,
+        out nint workerWindow,
+        out nint desktopView)
+    {
+        workerWindow = 0;
+        desktopView = 0;
+        if (!HasWindowClass(intermediateWindow, WallpaperEngineIntermediateWindowClass))
+        {
+            return false;
+        }
+
+        _ = GetWindowThreadProcessId(intermediateWindow, out var ownerProcessId);
+        if (ownerProcessId != engineProcessId)
+        {
+            return false;
+        }
+
+        workerWindow = GetParent(intermediateWindow);
+        if (!HasWindowClass(workerWindow, DesktopWorkerWindowClass))
+        {
+            workerWindow = 0;
+            return false;
+        }
+
+        var programManager = GetParent(workerWindow);
+        if (!HasWindowClass(programManager, DesktopProgramManagerWindowClass))
+        {
+            workerWindow = 0;
+            return false;
+        }
+
+        desktopView = FindWindowEx(programManager, 0, DesktopViewWindowClass, null);
+        return NativeIsWindow(desktopView);
+    }
+
+    private static bool HasDirectChildOwnedByProcess(nint parentWindow, int processId)
+    {
+        var childWindow = FindWindowEx(parentWindow, 0, null, null);
+        while (childWindow != 0)
+        {
+            _ = GetWindowThreadProcessId(childWindow, out var childProcessId);
+            if (childProcessId == processId)
+            {
+                return true;
+            }
+
+            childWindow = FindWindowEx(parentWindow, childWindow, null, null);
+        }
+
+        return false;
+    }
+
+    private static void RestoreWatchdogRouterState(WallpaperEngineInputRouterState state)
+    {
+        if (state.WorkerWindowHandle != 0 && state.HasAppliedState)
+        {
+            RestoreInteractiveWorker(
+                state.WorkerWindowHandle,
+                state.DesktopViewWindowHandle);
+        }
+
+        state.Reset();
     }
 
     private static bool HasWindowClass(nint windowHandle, string expectedClass)
@@ -650,177 +791,7 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out NativePoint point);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
-    private static extern nint SetWindowsHookEx(
-        int hookId,
-        LowLevelMouseProc hookProcedure,
-        nint moduleHandle,
-        uint threadId);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool UnhookWindowsHookEx(nint hookHandle);
-
-    [DllImport("user32.dll")]
-    private static extern nint CallNextHookEx(
-        nint hookHandle,
-        int code,
-        nuint parameter,
-        nint data);
-
-    [DllImport("user32.dll", EntryPoint = "GetMessageW", SetLastError = true)]
-    private static extern int GetMessage(
-        out NativeMessage message,
-        nint windowHandle,
-        uint minimumMessage,
-        uint maximumMessage);
-
-    [DllImport("user32.dll", EntryPoint = "PeekMessageW")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool PeekMessage(
-        out NativeMessage message,
-        nint windowHandle,
-        uint minimumMessage,
-        uint maximumMessage,
-        uint removeMessage);
-
-    [DllImport("user32.dll", EntryPoint = "PostThreadMessageW", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool PostThreadMessage(
-        uint threadId,
-        uint message,
-        nuint parameter,
-        nint data);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
 #pragma warning restore SYSLIB1054
-
-    private sealed class LowLevelMouseHook : IDisposable
-    {
-        private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(5);
-        private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(1);
-
-        private readonly Action<int, int> _routeInput;
-        private readonly LowLevelMouseProc _hookProcedure;
-        private readonly ManualResetEventSlim _started = new();
-        private readonly Thread _thread;
-        private Exception? _startupException;
-        private nint _hookHandle;
-        private uint _threadId;
-        private bool _disposed;
-
-        public LowLevelMouseHook(Action<int, int> routeInput)
-        {
-            _routeInput = routeInput;
-            _hookProcedure = HookProcedure;
-            _thread = new Thread(Run)
-            {
-                IsBackground = true,
-                Name = "Wallpaper Engine monitor input router",
-            };
-            _thread.Start();
-
-            if (!_started.Wait(StartupTimeout))
-            {
-                Dispose();
-                throw new TimeoutException("Wallpaper Engine 마우스 입력 라우터를 시작하지 못했습니다.");
-            }
-
-            if (_startupException is not null)
-            {
-                Dispose();
-                throw new InvalidOperationException(
-                    "Wallpaper Engine 마우스 입력 라우터를 시작하지 못했습니다.",
-                    _startupException);
-            }
-        }
-
-        public void Dispose()
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            var hookHandle = Interlocked.Exchange(ref _hookHandle, 0);
-            if (hookHandle != 0)
-            {
-                _ = UnhookWindowsHookEx(hookHandle);
-            }
-
-            if (_threadId != 0)
-            {
-                _ = PostThreadMessage(_threadId, QuitMessage, 0, 0);
-            }
-
-            if (_thread != Thread.CurrentThread && _thread.IsAlive)
-            {
-                _ = _thread.Join(ShutdownTimeout);
-            }
-
-            _started.Dispose();
-        }
-
-        private void Run()
-        {
-            _threadId = GetCurrentThreadId();
-            _ = PeekMessage(out _, 0, 0, 0, 0);
-            _hookHandle = SetWindowsHookEx(
-                LowLevelMouseHookId,
-                _hookProcedure,
-                0,
-                0);
-            if (_hookHandle == 0)
-            {
-                _startupException = new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            _started.Set();
-            if (_hookHandle == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                while (GetMessage(out _, 0, 0, 0) > 0)
-                {
-                }
-            }
-            finally
-            {
-                var hookHandle = Interlocked.Exchange(ref _hookHandle, 0);
-                if (hookHandle != 0)
-                {
-                    _ = UnhookWindowsHookEx(hookHandle);
-                }
-            }
-        }
-
-        private nint HookProcedure(int code, nuint parameter, nint data)
-        {
-            if (code >= 0 && data != 0)
-            {
-                try
-                {
-                    var hookData = Marshal.PtrToStructure<LowLevelMouseHookData>(data);
-                    _routeInput(hookData.Point.X, hookData.Point.Y);
-                }
-                catch
-                {
-                    // The regular host poll reports native routing failures without
-                    // blocking input delivery to the rest of the desktop.
-                }
-            }
-
-            return CallNextHookEx(0, code, parameter, data);
-        }
-    }
-
-    private delegate nint LowLevelMouseProc(int code, nuint parameter, nint data);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
@@ -838,25 +809,4 @@ internal sealed class WindowsWallpaperEngineInterop : IWallpaperEngineInterop
         public int Y = y;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct LowLevelMouseHookData
-    {
-        public NativePoint Point;
-        public uint MouseData;
-        public uint Flags;
-        public uint Time;
-        public nuint ExtraInformation;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeMessage
-    {
-        public nint WindowHandle;
-        public uint Message;
-        public nuint Parameter;
-        public nint Data;
-        public uint Time;
-        public NativePoint Point;
-        public uint PrivateData;
-    }
 }
