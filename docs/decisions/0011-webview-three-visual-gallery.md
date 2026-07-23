@@ -19,6 +19,10 @@ pause/resume이 함께 동작하는지 작은 장면으로 먼저 검증한다. 
 - scene은 registry에 descriptor와 factory를 등록한다. WPF는 scene id만 선택한다.
 - 현재 배포에 필요한 three.js module을 앱에 vendor한다. CDN에 의존하지 않는다.
 - renderer의 pause/resume은 기존 `IWallpaperRenderLifecycle`을 WebView message로 전달한다.
+- user-data folder는 process exclusive로 열어 Wallpaper Engine의 빠른 재시작에서 이전
+  browser process와 새 앱이 같은 browser process를 공유하지 않게 한다.
+- browser·main renderer 실패 또는 10초 `ready` timeout 시 새 environment와 composition
+  control을 최대 5회 직렬 재생성하고, 성공하면 실패 전 render lifecycle 상태로 복귀한다.
 - 초기 `Baseline` 장면은 기본 조명, 회전 cube와 바닥만 사용한다. 특정 작품의 시각 언어와
   오디오 반응 계약은 이 검증 범위에 포함하지 않는다.
 
@@ -28,6 +32,8 @@ pause/resume이 함께 동작하는지 작은 장면으로 먼저 검증한다. 
 - 새 작품은 WPF와 Wallpaper Engine host를 변경하지 않고 registry에 추가할 수 있다.
 - WPF 상위 레이어의 hit testing과 native menu 소유권이 유지된다.
 - WebView2 process와 WebGL context는 native Direct3D surface보다 관리 부담이 낮다.
+- 강제 종료나 renderer 실패 뒤 검정 fallback 배경에 고정되지 않고 WebView surface를
+  재생성할 수 있다.
 - `WebView2CompositionControl`의 capture 비용과 4K 성능은 Windows 실기기 검수 항목이다.
 - 작품 선택 UI, 시각 연출과 오디오 반응은 요구사항을 구체화한 뒤 별도 결정으로 추가한다.
 

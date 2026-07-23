@@ -44,7 +44,10 @@ visual로 결과만 제공한다.
 `WebView2`의 `HwndHost` airspace를 피하고 WPF Dock·모달을 renderer 위에 합성한다. 웹
 자산과 사용하는 three.js module subset은 앱에 포함하며 외부 CDN이나 실행 시 Node.js에
 의존하지 않는다. composition capture 비용은 Standalone과 Wallpaper Engine의 실제
-해상도에서 별도 검증한다.
+해상도에서 별도 검증한다. 빠른 wallpaper 교체 중 이전 WebView2 browser process와 새
+앱이 user-data folder를 공유하지 않게 exclusive access를 사용한다. browser·main renderer
+실패 또는 10초 동안 renderer `ready` 신호가 없으면 composition control과 environment를
+직렬로 재생성한다.
 
 오디오·미디어 수집 서비스는 렌더러와 정보 카드가 공유할 수 있는 immutable snapshot을
 발행한다. renderer가 WPF ViewModel을 참조하거나 UI가 renderer의 내부 상태를 직접
@@ -131,12 +134,14 @@ Explorer Progman
 ```
 
 Wallpaper Engine이 생성한 WorkerW는 기본적으로 disabled 및 `WS_EX_TRANSPARENT`일 수 있다.
-이 경우 WPF가 화면에 보여도 클릭은 Explorer Desktop으로 전달된다. suspend되지 않는
-watchdog 입력 라우터가 검증된 HWND와 포인터 위치를 단일 60 Hz 루프에서 관찰하고, 포인터가
-전달된 parent의 화면 rect 안에 있을 때만 WorkerW를 활성화하고 투과 style을 제거한다.
-월페이퍼 프로세스에는 시스템 전역 저수준 마우스 hook을 설치하지 않는다. WorkerW는 여러
-모니터의 wallpaper child가 공유하므로 window region으로 자르지 않는다. dispose와
-watchdog은 WorkerW 비활성화, 투과 style, 무영역 상태와 Desktop z-order를 복원한다.
+이 경우 WPF가 화면에 보여도 클릭은 Explorer Desktop으로 전달된다. 실행 중인 월페이퍼
+프로세스의 직렬 host poll이 검증된 HWND와 포인터 위치를 관찰하고, 포인터가 전달된 parent의
+화면 rect 안에 있을 때만 WorkerW를 활성화하고 투과 style을 제거한다. 월페이퍼 프로세스에는
+시스템 전역 저수준 마우스 hook을 설치하지 않는다. 프로세스가 suspend되면 poll도 함께
+멈추므로 비-suspend 프로세스가 Wallpaper Engine 소유 WorkerW를 변경해 suspend된 child와
+교차 프로세스 대기를 만드는 일이 없다. WorkerW는 여러 모니터의 wallpaper child가
+공유하므로 window region으로 자르지 않는다. dispose와 종료 watchdog은 WorkerW 비활성화,
+투과 style, 무영역 상태와 Desktop z-order를 복원한다.
 
 parent가 보이지 않으면 렌더 수명을 pause하고, parent 또는 Desktop WorkerW 연결이
 사라지면 `Recovering` 상태로 전환한다. 일반 reload는 해당 package의 정확한 앱 경로만
@@ -146,8 +151,9 @@ parent가 보이지 않으면 렌더 수명을 pause하고, parent 또는 Deskto
 
 Wallpaper Engine은 pause 중 Application Wallpaper 프로세스를 OS suspend할 수 있다.
 따라서 엔진 종료 감지는 앱 내부 timer에만 의존하지 않고 suspend되지 않는 최소 watchdog이
-엔진·앱 PID와 parent/WorkerW HWND를 관찰한다. 엔진이 종료되면 watchdog은 해당 앱 PID만
-종료하고, 새 wallpaper child가 없으면 Explorer 입력 상태도 복원한다. 세부 결정은
+엔진·앱 PID를 관찰한다. watchdog은 앱이 살아 있는 동안 HWND나 입력 상태를 변경하지 않는다.
+엔진이 종료되면 해당 앱 PID만 종료하고, 새 wallpaper child가 없으면 시작 시 검증한
+WorkerW의 Explorer 입력 상태도 복원한다. 세부 결정은
 [ADR 0010](decisions/0010-wallpaper-engine-application-host.md), 실제 검증은
 [M6 검수 기록](m6-validation.md)을 따른다.
 

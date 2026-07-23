@@ -7,6 +7,7 @@ public sealed class WebVisualizerRenderLifecycle : IWallpaperRenderLifecycle
     private readonly object _stateLock = new();
     private WebVisualizerSurface? _surface;
     private RenderLayerState _state = RenderLayerState.Stopped;
+    private RenderLayerState _stateBeforeFault = RenderLayerState.Stopped;
     private string _selectedSceneId = "baseline";
     private bool _disposed;
 
@@ -43,6 +44,8 @@ public sealed class WebVisualizerRenderLifecycle : IWallpaperRenderLifecycle
             _surface = surface;
             surface.InitializationFailed -= Surface_OnInitializationFailed;
             surface.InitializationFailed += Surface_OnInitializationFailed;
+            surface.InitializationCompleted -= Surface_OnInitializationCompleted;
+            surface.InitializationCompleted += Surface_OnInitializationCompleted;
             surface.SetLifecycleState(_state);
             surface.SelectScene(_selectedSceneId);
         }
@@ -72,6 +75,7 @@ public sealed class WebVisualizerRenderLifecycle : IWallpaperRenderLifecycle
             }
 
             surface.InitializationFailed -= Surface_OnInitializationFailed;
+            surface.InitializationCompleted -= Surface_OnInitializationCompleted;
             _surface = null;
         }
     }
@@ -115,6 +119,7 @@ public sealed class WebVisualizerRenderLifecycle : IWallpaperRenderLifecycle
             if (surface is not null)
             {
                 surface.InitializationFailed -= Surface_OnInitializationFailed;
+                surface.InitializationCompleted -= Surface_OnInitializationCompleted;
             }
         }
 
@@ -143,8 +148,26 @@ public sealed class WebVisualizerRenderLifecycle : IWallpaperRenderLifecycle
         {
             if (!_disposed)
             {
+                if (_state != RenderLayerState.Faulted)
+                {
+                    _stateBeforeFault = _state;
+                }
+
                 _state = RenderLayerState.Faulted;
             }
+        }
+    }
+
+    private void Surface_OnInitializationCompleted(object? sender, EventArgs e)
+    {
+        lock (_stateLock)
+        {
+            if (_disposed || _state != RenderLayerState.Faulted)
+            {
+                return;
+            }
+
+            SetStateCore(_stateBeforeFault);
         }
     }
 }
