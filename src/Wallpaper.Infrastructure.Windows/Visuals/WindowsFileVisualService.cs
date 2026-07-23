@@ -13,6 +13,7 @@ namespace Wallpaper.Infrastructure.Windows.Visuals;
 public sealed class WindowsFileVisualService : IFileVisualService
 {
     private const uint ShgfiIcon = 0x000000100;
+    private const uint ShgfiDisplayName = 0x000000200;
     private const uint ShgfiLargeIcon = 0x000000000;
     private const uint ShgfiSystemIconIndex = 0x000004000;
     private const int ImageListDrawTransparent = 0x00000001;
@@ -51,7 +52,8 @@ public sealed class WindowsFileVisualService : IFileVisualService
             key,
             () => CreateVisualResult(
                 LoadShellIcon(absolutePath, targetPixelWidth),
-                FileVisualKind.ShellIcon),
+                FileVisualKind.ShellIcon,
+                LoadShellDisplayName(absolutePath, file.Extension)),
             cancellationToken);
     }
 
@@ -277,6 +279,37 @@ public sealed class WindowsFileVisualService : IFileVisualService
         }
     }
 
+    private static string? LoadShellDisplayName(string absolutePath, string extension)
+    {
+        if (!ShortcutDisplayNamePolicy.IsShortcutExtension(extension))
+        {
+            return null;
+        }
+
+        try
+        {
+            var fileInfo = new ShellFileInfo();
+            var result = SHGetFileInfo(
+                absolutePath,
+                fileAttributes: 0,
+                ref fileInfo,
+                (uint)Marshal.SizeOf<ShellFileInfo>(),
+                ShgfiDisplayName);
+            return result == 0 || string.IsNullOrWhiteSpace(fileInfo.DisplayName)
+                ? null
+                : fileInfo.DisplayName;
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+                UnauthorizedAccessException or
+                System.Security.SecurityException or
+                ExternalException or
+                ArgumentException)
+        {
+            return null;
+        }
+    }
+
     private static BitmapSource? LoadThumbnail(string absolutePath, int targetPixelWidth)
     {
         try
@@ -328,7 +361,10 @@ public sealed class WindowsFileVisualService : IFileVisualService
         }
     }
 
-    private static FileVisualResult? CreateVisualResult(BitmapSource? source, FileVisualKind kind)
+    private static FileVisualResult? CreateVisualResult(
+        BitmapSource? source,
+        FileVisualKind kind,
+        string? displayName = null)
     {
         if (source is null)
         {
@@ -347,7 +383,8 @@ public sealed class WindowsFileVisualService : IFileVisualService
             kind,
             analysis.Presentation,
             sourcePixelWidth,
-            sourcePixelHeight);
+            sourcePixelHeight,
+            displayName);
     }
 
     private static AlphaCoverageAnalysis AnalyzeAlpha(BitmapSource source)

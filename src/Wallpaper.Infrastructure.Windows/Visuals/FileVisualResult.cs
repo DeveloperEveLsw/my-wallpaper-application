@@ -8,7 +8,8 @@ public sealed record FileVisualResult(
     FileVisualKind Kind,
     FileVisualPresentation Presentation,
     int SourcePixelWidth,
-    int SourcePixelHeight);
+    int SourcePixelHeight,
+    string? DisplayName = null);
 
 public enum FileVisualKind
 {

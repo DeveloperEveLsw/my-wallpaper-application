@@ -14,6 +14,7 @@ public sealed class FileTileViewModel(
     private readonly IFileVisualService _visualService = visualService;
     private readonly SemaphoreSlim _visualLoadGate = new(1, 1);
     private BitmapSource? _visual;
+    private string _name = ShortcutDisplayNamePolicy.CreateFallback(file.Name, file.Extension);
     private int _loadedPixelWidth;
     private FileVisualKind? _visualKind;
     private FileVisualPresentation _visualPresentation;
@@ -21,7 +22,13 @@ public sealed class FileTileViewModel(
 
     public DesktopFile File { get; } = file;
 
-    public string Name => File.Name;
+    public string Name
+    {
+        get => _name;
+        private set => SetProperty(ref _name, value);
+    }
+
+    public string OriginalName => File.Name;
 
     public string RelativePath => File.RelativePath;
 
@@ -119,6 +126,14 @@ public sealed class FileTileViewModel(
 
     private void ApplyVisual(FileVisualResult visual)
     {
+        if (visual.Kind == FileVisualKind.ShellIcon)
+        {
+            Name = ShortcutDisplayNamePolicy.NormalizeShellDisplayName(
+                visual.DisplayName,
+                File.Name,
+                File.Extension);
+        }
+
         _visualKind = visual.Kind;
         VisualPresentation = visual.Presentation;
         Visual = visual.Source;
