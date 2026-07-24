@@ -429,11 +429,11 @@ body.is-pointer-dragging * {
 }
 
 .folder-glyph-back {
-  fill: var(--folder-accent-soft);
+  fill: var(--folder-accent);
 }
 
 .folder-glyph-front {
-  fill: var(--folder-accent);
+  fill: var(--folder-accent-soft);
 }
 
 .loose-glyph {
