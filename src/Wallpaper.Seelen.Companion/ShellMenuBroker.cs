@@ -104,7 +104,10 @@ internal static class ShellMenuBroker
                 kind);
             var service = new WindowsShellContextMenuService();
             using var session = service.CreateItemContextMenu(target, owner.Handle);
-            commandInvoked = session.Show(launch.ScreenX, launch.ScreenY);
+            commandInvoked = session.Show(
+                launch.ScreenX,
+                launch.ScreenY,
+                ShellContextMenuShowOptions.RequestSynchronousCommand);
             return new ShellMenuCompletion(
                 launch.RequestId!,
                 Succeeded: true,

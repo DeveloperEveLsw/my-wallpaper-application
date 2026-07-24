@@ -7,5 +7,8 @@ public interface IShellContextMenuSession : IDisposable
 {
     int NativeMenuItemCount { get; }
 
-    bool Show(int screenX, int screenY);
+    bool Show(
+        int screenX,
+        int screenY,
+        ShellContextMenuShowOptions options = ShellContextMenuShowOptions.None);
 }

@@ -17,6 +17,8 @@
 - current-user named pipe에서 ticket을 한 번만 실제 target으로 교환
 - `[STAThread]` broker와 투명한 1×1 top-level owner HWND
 - 기존 `IContextMenu/IContextMenu2/3`, `TrackPopupMenuEx`와 owner-drawn 메시지 경로 재사용
+- transient broker의 `InvokeCommand`에 `CMIC_MASK_NOASYNC`를 요청해 host 의존 Shell
+  명령이 완료되기 전에 broker가 종료되지 않도록 함
 - 메뉴 취소 때 widget 포커스 복귀, 명령 실행 때 새 창 포커스 보존
 - 성공·취소·실패·broker 연결 끊김 뒤 전체 projection 재스캔
 - pending ticket 경합·중복·명시적 취소·능동 만료 처리
@@ -35,7 +37,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 | 범위 | 결과 |
 |---|---|
 | 전체 Release build | 경고 0, 오류 0 |
-| 전체 .NET 테스트 | 163/163 통과 |
+| 전체 .NET 테스트 | 166/166 통과 |
 | `Wallpaper.Seelen.Tests` | 38/38 통과 |
 | 제품 위젯 Node 테스트 | 9/9 통과 |
 | M0·제품 위젯 bundle | 통과 |
@@ -53,6 +55,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 - 위젯 다섯 번째 Glass 옵션과 프로토콜 5 DOM/bundle 계약
 - `RequestFocus`, transient broker 인자, 물리 좌표와 owner HWND 전달
 - Windows STA에서 투명한 layered tool owner HWND 실제 생성
+- WPF 장기 생존 host와 transient broker의 `InvokeCommand` 비동기 정책 분리
 
 STA COM, 실제 top-level foreground, `#32768` 네이티브 메뉴 내용과 설치된 Shell 확장은
 Windows Seelen 실기기 검수로 분리한다.
@@ -84,6 +87,7 @@ Seelen에서 `@wallpaper/desktop`을 활성화한다. 위젯 설정의 `기본 D
    동작한다.
 6. `Esc`로 취소하면 위젯 입력과 포커스가 복귀하고 다음 우클릭이 즉시 동작한다.
 7. `속성`을 실행하면 속성 창의 포커스를 위젯이 다시 빼앗지 않는다.
+   속성 창이 열린 동안 transient broker가 유지되고 창을 닫은 뒤 종료되는지도 확인한다.
 8. fixture에서만 이름 변경 같은 Shell 명령을 실행해 메뉴 종료 뒤 Dock·모달 snapshot이
    실제 파일 시스템과 다시 일치하는지 확인한다.
 9. 빠르게 반복 클릭해도 네이티브 메뉴가 동시에 두 개 열리지 않고

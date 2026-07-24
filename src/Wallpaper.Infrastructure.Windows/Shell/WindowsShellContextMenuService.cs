@@ -11,6 +11,7 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
     private const uint CoInitApartmentThreaded = 0x2;
     private const uint ClsCtxLocalServer = 0x4;
     private const uint CmfNormal = 0x00000000;
+    private const uint CmicMaskNoAsync = 0x00000100;
     private const uint CmicMaskUnicode = 0x00004000;
     private const uint CmicMaskPtInvoke = 0x20000000;
     private const uint TpmRightButton = 0x0002;
@@ -293,7 +294,8 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         nint contextMenu3,
         nint ownerWindow,
         int screenX,
-        int screenY)
+        int screenY,
+        ShellContextMenuShowOptions options)
     {
         SubclassProc? subclassProc = null;
         var subclassInstalled = false;
@@ -341,7 +343,13 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                 return false;
             }
 
-            InvokeContextCommand(contextMenu, ownerWindow, selectedCommand, screenX, screenY);
+            InvokeContextCommand(
+                contextMenu,
+                ownerWindow,
+                selectedCommand,
+                screenX,
+                screenY,
+                options);
             return true;
         }
         finally
@@ -360,7 +368,8 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         nint ownerWindow,
         uint commandId,
         int screenX,
-        int screenY)
+        int screenY,
+        ShellContextMenuShowOptions options)
     {
         if (commandId < FirstCommandId || commandId > LastCommandId)
         {
@@ -371,7 +380,7 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         var invoke = new CommandInvokeInfo
         {
             Size = (uint)Marshal.SizeOf<CommandInvokeInfo>(),
-            Mask = CmicMaskUnicode | CmicMaskPtInvoke,
+            Mask = CreateCommandInvokeMask(options),
             OwnerWindow = ownerWindow,
             Verb = (nint)commandOffset,
             Show = SwShowNormal,
@@ -381,6 +390,24 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
 
         var invokeCommand = GetVtableDelegate<InvokeCommandDelegate>(contextMenu, 4);
         ThrowForHResult(invokeCommand(contextMenu, ref invoke));
+    }
+
+    internal static uint CreateCommandInvokeMask(ShellContextMenuShowOptions options)
+    {
+        const ShellContextMenuShowOptions supportedOptions =
+            ShellContextMenuShowOptions.RequestSynchronousCommand;
+        if ((options & ~supportedOptions) != 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options));
+        }
+
+        var mask = CmicMaskUnicode | CmicMaskPtInvoke;
+        if ((options & ShellContextMenuShowOptions.RequestSynchronousCommand) != 0)
+        {
+            mask |= CmicMaskNoAsync;
+        }
+
+        return mask;
     }
 
     private static SubclassProc CreateSubclassProc(nint contextMenu2, nint contextMenu3)
@@ -525,7 +552,10 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
 
         public int NativeMenuItemCount { get; }
 
-        public bool Show(int screenX, int screenY)
+        public bool Show(
+            int screenX,
+            int screenY,
+            ShellContextMenuShowOptions options = ShellContextMenuShowOptions.None)
         {
             EnsureUsable();
             return RunShellAction(() => ShowNativeContextMenu(
@@ -535,7 +565,8 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                 _contextMenu3,
                 _ownerWindow,
                 screenX,
-                screenY));
+                screenY,
+                options));
         }
 
         public void Dispose()

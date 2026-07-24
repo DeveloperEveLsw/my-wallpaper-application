@@ -9,11 +9,42 @@ namespace Wallpaper.Infrastructure.Windows.Tests;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsShellContextMenuServiceTests : IDisposable
 {
+    private const uint CmicMaskNoAsync = 0x00000100;
+    private const uint CmicMaskUnicode = 0x00004000;
+    private const uint CmicMaskPtInvoke = 0x20000000;
+
     private readonly string _rootPath = Path.Combine(
         Path.GetTempPath(),
         $"wallpaper-shell-menu-{Guid.NewGuid():N}");
 
     public WindowsShellContextMenuServiceTests() => Directory.CreateDirectory(_rootPath);
+
+    [Fact]
+    public void CreateCommandInvokeMask_DefaultAllowsTheShellCommandToReturnAsynchronously()
+    {
+        var mask = WindowsShellContextMenuService.CreateCommandInvokeMask(
+            ShellContextMenuShowOptions.None);
+
+        Assert.Equal(CmicMaskUnicode | CmicMaskPtInvoke, mask);
+        Assert.Equal(0U, mask & CmicMaskNoAsync);
+    }
+
+    [Fact]
+    public void CreateCommandInvokeMask_SynchronousOptionKeepsTransientHostAliveForTheCommand()
+    {
+        var mask = WindowsShellContextMenuService.CreateCommandInvokeMask(
+            ShellContextMenuShowOptions.RequestSynchronousCommand);
+
+        Assert.Equal(CmicMaskUnicode | CmicMaskPtInvoke | CmicMaskNoAsync, mask);
+    }
+
+    [Fact]
+    public void CreateCommandInvokeMask_RejectsUnknownOptions()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            WindowsShellContextMenuService.CreateCommandInvokeMask(
+                (ShellContextMenuShowOptions)2));
+    }
 
     [Fact]
     public void CreateItemContextMenu_RejectsStaleTargetBeforeUsingOwnerWindow()
