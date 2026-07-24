@@ -118,6 +118,40 @@ public partial class WallpaperView : UserControl, IDisposable
         e.Handled = true;
     }
 
+    private void FileModalLayer_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, sender))
+        {
+            return;
+        }
+
+        ViewModel.CloseModalCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    private void MoveDialogLayer_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+        ExecuteBackdropCommand(sender, e, ViewModel.CancelMoveCommand);
+
+    private void RenameDialogLayer_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+        ExecuteBackdropCommand(sender, e, ViewModel.CancelRenameCommand);
+
+    private void RecycleDialogLayer_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+        ExecuteBackdropCommand(sender, e, ViewModel.CancelRecycleCommand);
+
+    private static void ExecuteBackdropCommand(
+        object sender,
+        MouseButtonEventArgs e,
+        ICommand command)
+    {
+        if (!ReferenceEquals(e.OriginalSource, sender) || !command.CanExecute(null))
+        {
+            return;
+        }
+
+        command.Execute(null);
+        e.Handled = true;
+    }
+
     private async void BackgroundSurface_OnMouseRightButtonUp(object sender, MouseButtonEventArgs e)
     {
         var screenPosition = GetContextMenuScreenPosition(e);
@@ -585,9 +619,12 @@ public partial class WallpaperView : UserControl, IDisposable
 
         var maxLeft = Math.Max(margin, _interactionRoot.ActualWidth - menuWidth - margin);
         var maxTop = Math.Max(margin, _interactionRoot.ActualHeight - menuHeight - margin);
+        var preferredTop = position.Y + menuHeight <= _interactionRoot.ActualHeight - margin
+            ? position.Y
+            : position.Y - menuHeight;
         return new Point(
             Math.Clamp(position.X, margin, maxLeft),
-            Math.Clamp(position.Y, margin, maxTop));
+            Math.Clamp(preferredTop, margin, maxTop));
     }
 
     private Point GetElementCenter(FrameworkElement element) => element.TranslatePoint(

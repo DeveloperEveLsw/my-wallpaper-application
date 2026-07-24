@@ -69,7 +69,7 @@ test("포인터 drop 위치에 따라 Dock ID 순서를 바꾼다", () => {
 test("Glass 메뉴를 작업 영역 가장자리 안에 배치한다", () => {
   assert.deepEqual(
     placeFloatingPanel(1900, 1000, 230, 180, 1920, 1080),
-    { left: 1680, top: 890 },
+    { left: 1680, top: 820 },
   );
   assert.deepEqual(
     placeFloatingPanel(-20, -30, 230, 180, 1920, 1080),
@@ -78,5 +78,16 @@ test("Glass 메뉴를 작업 영역 가장자리 안에 배치한다", () => {
   assert.deepEqual(
     placeFloatingPanel(40, 50, 230, 180, 1920, 1080),
     { left: 40, top: 50 },
+  );
+});
+
+test("Glass 메뉴는 아래 공간이 부족하면 포인터 위로 펼친다", () => {
+  assert.deepEqual(
+    placeFloatingPanel(300, 500, 230, 180, 1280, 600),
+    { left: 300, top: 320 },
+  );
+  assert.deepEqual(
+    placeFloatingPanel(300, 400, 230, 180, 1280, 600),
+    { left: 300, top: 400 },
   );
 });

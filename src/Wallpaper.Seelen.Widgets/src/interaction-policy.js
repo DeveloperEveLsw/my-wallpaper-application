@@ -90,14 +90,14 @@ export function placeFloatingPanel(
   viewportHeight,
   margin = 10,
 ) {
+  const maxLeft = Math.max(margin, viewportWidth - panelWidth - margin);
+  const maxTop = Math.max(margin, viewportHeight - panelHeight - margin);
+  const preferredTop = clientY + panelHeight <= viewportHeight - margin
+    ? clientY
+    : clientY - panelHeight;
+
   return {
-    left: Math.min(
-      Math.max(margin, clientX),
-      Math.max(margin, viewportWidth - panelWidth - margin),
-    ),
-    top: Math.min(
-      Math.max(margin, clientY),
-      Math.max(margin, viewportHeight - panelHeight - margin),
-    ),
+    left: Math.min(Math.max(margin, clientX), maxLeft),
+    top: Math.min(Math.max(margin, preferredTop), maxTop),
   };
 }

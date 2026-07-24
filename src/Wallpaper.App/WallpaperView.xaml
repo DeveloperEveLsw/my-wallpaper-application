@@ -213,21 +213,25 @@
                            Text="날짜" />
             </StackPanel>
 
-            <Border Width="760"
-                    Height="470"
-                    Margin="28,28,28,238"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Bottom"
-                    Padding="22"
-                    Background="#D41A2131"
-                    BorderBrush="#55FFFFFF"
-                    BorderThickness="1"
-                    CornerRadius="28"
-                    Visibility="{Binding IsModalOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="34" Opacity="0.35" ShadowDepth="12" />
-                </Border.Effect>
-                <Grid>
+            <Grid x:Name="FileModalLayer"
+                  Panel.ZIndex="3"
+                  Background="Transparent"
+                  MouseLeftButtonDown="FileModalLayer_OnMouseLeftButtonDown"
+                  Visibility="{Binding IsModalOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Border Width="760"
+                        Height="470"
+                        Margin="28,28,28,238"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Bottom"
+                        Padding="22"
+                        Background="#D41A2131"
+                        BorderBrush="#55FFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="28">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="34" Opacity="0.35" ShadowDepth="12" />
+                    </Border.Effect>
+                    <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
@@ -431,8 +435,9 @@
                             </TextBlock.Style>
                         </TextBlock>
                     </Grid>
-                </Grid>
-            </Border>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <Grid x:Name="DockContainer"
                   Margin="20,0,20,96"
@@ -731,6 +736,7 @@
 
         <Grid Panel.ZIndex="5"
               Background="#85070B13"
+              MouseLeftButtonDown="MoveDialogLayer_OnMouseLeftButtonDown"
               Visibility="{Binding IsMoveDialogOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="470"
                     Padding="24"
@@ -795,6 +801,7 @@
 
         <Grid Panel.ZIndex="5"
               Background="#85070B13"
+              MouseLeftButtonDown="RenameDialogLayer_OnMouseLeftButtonDown"
               Visibility="{Binding IsRenameDialogOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="440"
                     Padding="24"
@@ -854,6 +861,7 @@
 
         <Grid Panel.ZIndex="5"
               Background="#85070B13"
+              MouseLeftButtonDown="RecycleDialogLayer_OnMouseLeftButtonDown"
               Visibility="{Binding IsRecycleDialogOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Border Width="470"
                     Padding="24"
