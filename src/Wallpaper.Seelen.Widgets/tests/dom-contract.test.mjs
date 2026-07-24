@@ -32,3 +32,15 @@ test("위젯은 프로토콜 4 itemCommand만 사용한다", () => {
   assert.match(script, /type: "itemCommand"/u);
   assert.doesNotMatch(script, /type: "openFile"/u);
 });
+
+test("Seelen WebView와 호환되는 포인터 드래그만 사용한다", () => {
+  assert.match(script, /addEventListener\("pointerdown"/u);
+  assert.match(script, /setPointerCapture/u);
+  assert.match(script, /addEventListener\(\s*"lostpointercapture"/u);
+  assert.doesNotMatch(script, /\.draggable\s*=/u);
+  assert.doesNotMatch(
+    script,
+    /addEventListener\("(?:(?:drag(?:start|enter|over|leave|end))|drop)"/u,
+  );
+  assert.doesNotMatch(script, /dataTransfer/u);
+});

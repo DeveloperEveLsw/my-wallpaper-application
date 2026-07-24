@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  hasExceededDragThreshold,
   isNameValidationMessage,
   isValidFileMoveDestination,
   placeFloatingPanel,
+  reorderIds,
   validateWindowsName,
 } from "../src/interaction-policy.js";
 
@@ -40,6 +42,28 @@ test("M4의 세 이동 경로와 같은 카드 금지를 구분한다", () => {
     false,
   );
   assert.equal(isValidFileMoveDestination("", "folder:WORK"), false);
+});
+
+test("포인터 드래그는 5px 이동 뒤에만 시작한다", () => {
+  assert.equal(hasExceededDragThreshold(10, 10, 13, 13), false);
+  assert.equal(hasExceededDragThreshold(10, 10, 15, 10), true);
+  assert.equal(hasExceededDragThreshold(10, 10, 6, 7), true);
+  assert.equal(hasExceededDragThreshold(0, 0, Number.NaN, 10), false);
+});
+
+test("포인터 drop 위치에 따라 Dock ID 순서를 바꾼다", () => {
+  assert.deepEqual(
+    reorderIds(["A", "B", "C", "D"], "A", "C", false),
+    ["B", "A", "C", "D"],
+  );
+  assert.deepEqual(
+    reorderIds(["A", "B", "C", "D"], "A", "C", true),
+    ["B", "C", "A", "D"],
+  );
+  assert.deepEqual(
+    reorderIds(["A", "B"], "missing", "B", true),
+    ["A", "B"],
+  );
 });
 
 test("Glass 메뉴를 작업 영역 가장자리 안에 배치한다", () => {

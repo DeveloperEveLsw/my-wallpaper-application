@@ -5,7 +5,7 @@
 - Windows Seelen 실기기 검수: 사용자 진행 예정
 - 기준일: 2026-07-24
 - 기준 프로토콜: 4
-- 제품 위젯 버전: 0.4.0
+- 제품 위젯 버전: 0.4.1
 
 ## 구현 범위
 
@@ -29,7 +29,8 @@
 - 루트 파일 → 실제 폴더
 - 실제 폴더 파일 → 루트
 - 실제 폴더 파일 → 다른 실제 폴더
-- Dock 순서 drag와 분리된 파일 drag payload
+- HTML5 drag 대신 Seelen WebView 호환 pointer capture 상태 머신
+- 5px 이동 임계값과 Dock 순서 drag·파일 drag 상태 분리
 - 파일명 drag preview
 - 출발 카드 무효 표시와 이동 가능한 카드 유효 표시
 - 대소문자 무시 충돌 검사와 표시되지 않는 하위 폴더 이름 포함
@@ -67,7 +68,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 | 전체 Release build | 경고 0, 오류 0 |
 | 전체 .NET 테스트 | 151/151 통과 |
 | `Wallpaper.Seelen.Tests` | 27/27 통과 |
-| 제품 위젯 Node 테스트 | 6/6 통과 |
+| 제품 위젯 Node 테스트 | 9/9 통과 |
 | M0·제품 위젯 bundle | 통과 |
 | 생성 JavaScript 구문 검사 | 통과 |
 | npm audit | 취약점 0 |
@@ -92,6 +93,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 - 같은 `requestId` 재전송의 단일 실행
 - 실행 중인 파일 명령이 끝날 때까지 루트 변경을 직렬 대기
 - Glass 메뉴 정적 DOM 계약, 작업 영역 배치와 유효·무효 drop 정책
+- 5px 포인터 drag 임계값, Dock 순서 계산과 HTML5 drag API 비사용 계약
 
 기존 `Wallpaper.Infrastructure.Windows.Tests`는 실제 Windows 임시 fixture의 이름 변경,
 세 이동 경로, 잠긴 파일, 동시 충돌과 Windows recycle 경계를 계속 검증한다.
@@ -143,7 +145,8 @@ $fixture = ./scripts/new-m3-fixture.ps1
 $fixture = ./scripts/new-m4-fixture.ps1
 ```
 
-1. 파일 drag preview가 파일 이름을 표시하고 포인터를 따라간다.
+1. 파일 타일을 5px 미만 움직이면 클릭으로 남고, 5px 이상 움직이면 파일 이름 preview가
+   포인터를 따라간다.
 2. 출발 카드는 붉은 이동 불가, 다른 폴더와 `루트`는 초록 이동 가능 상태다.
 3. `root-to-work.txt`를 `루트`에서 `Work`로 이동한다.
 4. `work-to-root.txt`를 `Work`에서 `루트`로 이동한다.
@@ -156,7 +159,12 @@ $fixture = ./scripts/new-m4-fixture.ps1
 11. 대화상자 중 제안 이름을 외부에서 만들면 덮어쓰지 않고 새 이름을 제안한다.
 12. 잠긴 파일 이동은 실패하고 출발 파일을 보존한다.
 13. 출발 파일 또는 목적 폴더를 외부에서 변경하면 stale 오류와 최신 snapshot을 표시한다.
-14. Dock 폴더 자체 drag는 파일 이동이 아니라 기존 순서 재정렬로 동작한다.
+14. Dock 폴더 자체 drag는 5px 뒤 시작하며 파일 이동이 아니라 기존 순서 재정렬로
+    동작한다.
+15. 파일 또는 폴더를 빈 배경 위로 이동했다가 유효 대상으로 가져와도 drag가 끊기지
+    않는다.
+16. `Esc`, 포인터 취소 또는 위젯 밖 해제로 drag 표시가 남지 않고 이후 클릭과 배경 입력
+    투과가 정상 동작한다.
 
 ## M1·M2 회귀
 

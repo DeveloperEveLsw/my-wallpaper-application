@@ -9,9 +9,11 @@ import {
 } from "@seelen-ui/lib";
 import { currentMonitor } from "@tauri-apps/api/window";
 import {
+  hasExceededDragThreshold,
   isNameValidationMessage,
   isValidFileMoveDestination,
   placeFloatingPanel,
+  reorderIds,
   validateWindowsName,
 } from "./interaction-policy.js";
 
@@ -24,6 +26,8 @@ const TILE_GAP = 8;
 const TILE_ROW_HEIGHT = 130;
 const OVERSCAN_ROWS = 3;
 const ROOT_SYNC_DELAY = 450;
+const POINTER_DRAG_THRESHOLD = 5;
+const POINTER_DRAG_GHOST_OFFSET = 16;
 const TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   hour: "2-digit",
   hour12: false,
@@ -74,9 +78,9 @@ let generation = 0;
 let reconnectTimer = null;
 let pingTimer = null;
 let rootSyncTimer = null;
-let draggedFolderId = null;
 let draggedFile = null;
-let fileDropHandled = false;
+let pointerDragSession = null;
+let suppressedPointerClick = null;
 let selectedItemId = null;
 let contextItem = null;
 let renameTarget = null;
@@ -133,12 +137,18 @@ function bindUi() {
       closeItemMenu();
     }
   });
+  document.addEventListener("pointermove", handlePointerDragMove, true);
+  document.addEventListener("pointerup", handlePointerDragEnd, true);
+  document.addEventListener("pointercancel", handlePointerDragCancel, true);
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") {
       return;
     }
 
-    if (!itemMenu.hidden) {
+    if (pointerDragSession) {
+      event.preventDefault();
+      cancelPointerDrag("드래그를 취소했습니다.");
+    } else if (!itemMenu.hidden) {
       event.preventDefault();
       closeItemMenu();
     } else if (!renameDialog.hidden) {
@@ -302,6 +312,11 @@ function routeGlobalCursor(payload) {
 
   const [mouseX, mouseY] = payload;
   lastGlobalCursor = [mouseX, mouseY];
+  if (pointerDragSession) {
+    setCursorEventsIgnored(false);
+    return;
+  }
+
   const {
     height,
     width,
@@ -759,8 +774,7 @@ function applySnapshotNow(nextSnapshot) {
 }
 
 function shouldDeferSnapshot() {
-  return draggedFile
-    || draggedFolderId
+  return pointerDragSession
     || !renameDialog.hidden
     || !recycleDialog.hidden
     || !moveDialog.hidden;
@@ -835,12 +849,10 @@ function renderDock() {
   for (const folder of snapshot.folders) {
     const button = createDockButton(folder);
     bindFolderDrag(button, folder);
-    bindFileDrop(button, folder);
     dockFolders.append(button);
   }
 
   const looseButton = createDockButton(snapshot.looseFiles);
-  bindFileDrop(looseButton, snapshot.looseFiles);
   dockLoose.append(looseButton);
   updateFileDropTargets();
   updateDockSelection();
@@ -851,7 +863,6 @@ function createDockButton(folder) {
   button.className = "dock-card";
   button.type = "button";
   button.title = folder.isLooseFiles ? "루트 파일" : folder.name;
-  button.draggable = !folder.isLooseFiles;
   button.dataset.folderId = folder.id;
   button.setAttribute("aria-pressed", "false");
   button.innerHTML = folder.isLooseFiles
@@ -873,7 +884,14 @@ function createDockButton(folder) {
   button.querySelector(".dock-name").textContent = folder.isLooseFiles
     ? "루트"
     : folder.name;
-  button.addEventListener("click", () => toggleFolder(folder));
+  button.addEventListener("click", (event) => {
+    if (consumeSuppressedPointerClick(folder.id)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    toggleFolder(folder);
+  });
   if (!folder.isLooseFiles) {
     button.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -895,47 +913,16 @@ function updateDockSelection() {
 }
 
 function bindFolderDrag(button, folder) {
-  if (folder.isLooseFiles) return;
-  button.addEventListener("dragstart", (event) => {
-    draggedFolderId = folder.id;
-    button.setAttribute("aria-grabbed", "true");
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", folder.id);
-  });
-  button.addEventListener("dragend", () => {
-    draggedFolderId = null;
-    button.removeAttribute("aria-grabbed");
-    clearDockDropIndicators();
-    flushDeferredSnapshot();
-  });
-  button.addEventListener("dragover", (event) => {
-    if (draggedFolderId && draggedFolderId !== folder.id) {
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      clearDockDropIndicators();
-      const bounds = button.getBoundingClientRect();
-      const insertAfter = event.clientX >= bounds.left + bounds.width / 2;
-      button.classList.add(insertAfter ? "drag-after" : "drag-before");
-    }
-  });
-  button.addEventListener("dragleave", (event) => {
-    if (!button.contains(event.relatedTarget)) {
-      button.classList.remove("drag-before", "drag-after");
-    }
-  });
-  button.addEventListener("drop", (event) => {
-    event.preventDefault();
-    clearDockDropIndicators();
-    const order = snapshot.folders.map((item) => item.id);
-    const source = order.indexOf(draggedFolderId);
-    let target = order.indexOf(folder.id);
-    if (source < 0 || target < 0 || source === target) return;
-    const bounds = button.getBoundingClientRect();
-    const insertAfter = event.clientX >= bounds.left + bounds.width / 2;
-    const [moved] = order.splice(source, 1);
-    target = order.indexOf(folder.id);
-    order.splice(target + (insertAfter ? 1 : 0), 0, moved);
-    sendAuthenticated({ type: "setFolderOrder", orderedIds: order });
+  if (folder.isLooseFiles) {
+    return;
+  }
+
+  button.addEventListener("pointerdown", (event) => {
+    beginPointerDrag(event, {
+      folder,
+      kind: "folder",
+      itemId: folder.id,
+    });
   });
 }
 
@@ -945,48 +932,308 @@ function clearDockDropIndicators() {
   }
 }
 
-function bindFileDrop(button, folder) {
-  button.addEventListener("dragover", (event) => {
-    if (!draggedFile) {
-      return;
-    }
+function beginPointerDrag(event, descriptor) {
+  if (
+    event.button !== 0
+    || event.isPrimary === false
+    || pointerDragSession
+  ) {
+    return;
+  }
 
-    event.preventDefault();
-    event.stopPropagation();
-    const valid = isValidFileMoveDestination(
-      draggedFile.sourceFolderId,
-      folder.id,
+  const sourceElement = event.currentTarget;
+  pointerDragSession = {
+    ...descriptor,
+    activated: false,
+    insertAfter: false,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    pointerId: event.pointerId,
+    sourceElement,
+    startX: event.clientX,
+    startY: event.clientY,
+    targetId: null,
+  };
+  setCursorEventsIgnored(false);
+  try {
+    sourceElement.setPointerCapture(event.pointerId);
+    sourceElement.addEventListener(
+      "lostpointercapture",
+      handlePointerDragCaptureLost,
+      { once: true },
     );
-    event.dataTransfer.dropEffect = valid ? "move" : "none";
-    for (const card of dock.querySelectorAll(".dock-card")) {
-      card.classList.remove("file-drop-hover");
-    }
-    button.classList.add("file-drop-hover");
-  });
-  button.addEventListener("dragleave", (event) => {
-    if (!button.contains(event.relatedTarget)) {
-      button.classList.remove("file-drop-hover");
-    }
-  });
-  button.addEventListener("drop", (event) => {
-    if (!draggedFile) {
-      return;
-    }
+  } catch (error) {
+    pointerDragSession = null;
+    rerouteLastCursor();
+    console.warn("드래그 포인터를 캡처하지 못했습니다.", error);
+  }
+}
 
-    event.preventDefault();
-    event.stopPropagation();
-    const file = draggedFile;
-    const valid = isValidFileMoveDestination(file.sourceFolderId, folder.id);
-    fileDropHandled = true;
-    clearFileDropTargets();
-    if (!valid) {
-      announceCommand("파일이 이미 선택한 카드에 있습니다.");
+function handlePointerDragMove(event) {
+  const session = pointerDragSession;
+  if (!session || event.pointerId !== session.pointerId) {
+    return;
+  }
+
+  session.lastX = event.clientX;
+  session.lastY = event.clientY;
+  if (
+    !session.activated
+    && !hasExceededDragThreshold(
+      session.startX,
+      session.startY,
+      event.clientX,
+      event.clientY,
+      POINTER_DRAG_THRESHOLD,
+    )
+  ) {
+    return;
+  }
+
+  if (!session.activated) {
+    activatePointerDrag(session);
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  updatePointerDragAt(session, event.clientX, event.clientY);
+}
+
+function handlePointerDragEnd(event) {
+  if (!pointerDragSession || event.pointerId !== pointerDragSession.pointerId) {
+    return;
+  }
+
+  finishPointerDrag({
+    cancelled: false,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+}
+
+function handlePointerDragCancel(event) {
+  if (!pointerDragSession || event.pointerId !== pointerDragSession.pointerId) {
+    return;
+  }
+
+  finishPointerDrag({
+    cancelled: true,
+    reason: "드래그를 취소했습니다.",
+  });
+}
+
+function handlePointerDragCaptureLost(event) {
+  if (!pointerDragSession || event.pointerId !== pointerDragSession.pointerId) {
+    return;
+  }
+
+  finishPointerDrag({
+    cancelled: true,
+    reason: "포인터 연결이 끊겨 드래그를 취소했습니다.",
+  });
+}
+
+function cancelPointerDrag(reason) {
+  if (!pointerDragSession) {
+    return;
+  }
+
+  finishPointerDrag({ cancelled: true, reason });
+}
+
+function activatePointerDrag(session) {
+  session.activated = true;
+  closeItemMenu();
+  document.body.classList.add("is-pointer-dragging");
+  session.sourceElement.classList.add("is-pointer-drag-source");
+  session.sourceElement.setAttribute("aria-grabbed", "true");
+  if (session.kind === "folder") {
+    announceCommand(`${session.folder.name} 순서 변경 시작`);
+    return;
+  }
+
+  draggedFile = session.file;
+  selectFile(session.file.id);
+  fileDragGhost.textContent = session.file.name;
+  fileDragGhost.hidden = false;
+  updateFileDropTargets();
+  announceCommand(`${session.file.name} 이동 시작`);
+}
+
+function updatePointerDragAt(session, clientX, clientY) {
+  if (session.kind === "folder") {
+    updateFolderPointerDragAt(session, clientX, clientY);
+    return;
+  }
+
+  positionFileDragGhost(clientX, clientY);
+  updateFilePointerDragAt(session, clientX, clientY);
+}
+
+function updateFolderPointerDragAt(session, clientX, clientY) {
+  clearDockDropIndicators();
+  session.targetId = null;
+  const card = findDockCardAtPoint(clientX, clientY);
+  if (
+    !card
+    || !dockFolders.contains(card)
+    || card.dataset.folderId === session.folder.id
+  ) {
+    return;
+  }
+
+  const bounds = card.getBoundingClientRect();
+  session.targetId = card.dataset.folderId;
+  session.insertAfter = clientX >= bounds.left + bounds.width / 2;
+  card.classList.add(session.insertAfter ? "drag-after" : "drag-before");
+}
+
+function updateFilePointerDragAt(session, clientX, clientY) {
+  for (const card of dock.querySelectorAll(".dock-card")) {
+    card.classList.remove("file-drop-hover");
+  }
+
+  session.targetId = null;
+  const card = findDockCardAtPoint(clientX, clientY);
+  if (!card) {
+    return;
+  }
+
+  session.targetId = card.dataset.folderId;
+  card.classList.add("file-drop-hover");
+}
+
+function findDockCardAtPoint(clientX, clientY) {
+  const element = document.elementFromPoint(clientX, clientY);
+  const card = element instanceof Element
+    ? element.closest(".dock-card")
+    : null;
+  return card && dock.contains(card) ? card : null;
+}
+
+function positionFileDragGhost(clientX, clientY) {
+  const position = placeFloatingPanel(
+    clientX + POINTER_DRAG_GHOST_OFFSET,
+    clientY + POINTER_DRAG_GHOST_OFFSET,
+    fileDragGhost.offsetWidth,
+    fileDragGhost.offsetHeight,
+    globalThis.innerWidth,
+    globalThis.innerHeight,
+  );
+  fileDragGhost.style.left = `${position.left}px`;
+  fileDragGhost.style.top = `${position.top}px`;
+}
+
+function finishPointerDrag({
+  cancelled,
+  clientX = null,
+  clientY = null,
+  reason = null,
+}) {
+  const session = pointerDragSession;
+  if (!session) {
+    return;
+  }
+
+  if (
+    session.activated
+    && !cancelled
+    && Number.isFinite(clientX)
+    && Number.isFinite(clientY)
+  ) {
+    updatePointerDragAt(session, clientX, clientY);
+  }
+
+  const targetId = session.targetId;
+  const insertAfter = session.insertAfter;
+  const orderedIds = session.kind === "folder" && session.activated && targetId
+    ? reorderIds(
+      snapshot.folders.map((folder) => folder.id),
+      session.folder.id,
+      targetId,
+      insertAfter,
+    )
+    : null;
+  const destination = session.kind === "file" && session.activated && targetId
+    ? findProjectedFolder(targetId)
+    : null;
+
+  pointerDragSession = null;
+  if (session.sourceElement.hasPointerCapture?.(session.pointerId)) {
+    session.sourceElement.releasePointerCapture(session.pointerId);
+  }
+  document.body.classList.remove("is-pointer-dragging");
+  session.sourceElement.classList.remove("is-pointer-drag-source");
+  session.sourceElement.removeAttribute("aria-grabbed");
+  clearDockDropIndicators();
+  clearFileDropTargets();
+  fileDragGhost.hidden = true;
+  fileDragGhost.style.removeProperty("left");
+  fileDragGhost.style.removeProperty("top");
+  draggedFile = null;
+
+  if (session.activated) {
+    suppressPointerClick(session.itemId);
+    if (session.kind === "file") {
+      requestAnimationFrame(() => {
+        if (!pointerDragSession) {
+          renderVisibleRows();
+        }
+      });
+    }
+  }
+
+  if (session.activated && cancelled) {
+    if (session.kind === "file") {
       retryRefresh();
-      return;
     }
+    announceCommand(reason || "드래그를 취소했습니다.");
+  } else if (session.kind === "folder" && orderedIds) {
+    sendAuthenticated({ type: "setFolderOrder", orderedIds });
+    announceCommand(`${session.folder.name} 순서를 변경했습니다.`);
+  } else if (session.kind === "folder" && session.activated) {
+    announceCommand("폴더 순서 변경을 취소했습니다.");
+  } else if (session.kind === "file" && session.activated && destination) {
+    if (isValidFileMoveDestination(session.file.sourceFolderId, destination.id)) {
+      void prepareFileMove(session.file, destination);
+    } else {
+      retryRefresh();
+      announceCommand("파일이 이미 선택한 카드에 있습니다.");
+    }
+  } else if (session.kind === "file" && session.activated) {
+    retryRefresh();
+    announceCommand("파일 이동을 취소했습니다.");
+  }
 
-    void prepareFileMove(file, folder);
-  });
+  flushDeferredSnapshot();
+  rerouteLastCursor();
+}
+
+function findProjectedFolder(folderId) {
+  if (!snapshot || !folderId) {
+    return null;
+  }
+
+  return [...snapshot.folders, snapshot.looseFiles]
+    .find((folder) => folder.id === folderId) ?? null;
+}
+
+function suppressPointerClick(itemId) {
+  suppressedPointerClick = {
+    expiresAt: performance.now() + 750,
+    itemId,
+  };
+}
+
+function consumeSuppressedPointerClick(itemId) {
+  if (!suppressedPointerClick) {
+    return false;
+  }
+
+  const suppressed = suppressedPointerClick;
+  suppressedPointerClick = null;
+  return suppressed.itemId === itemId
+    && performance.now() <= suppressed.expiresAt;
 }
 
 function updateFileDropTargets() {
@@ -1070,7 +1317,7 @@ function getFileColumnCount() {
 }
 
 function renderVisibleRows() {
-  if (draggedFile) {
+  if (pointerDragSession?.kind === "file") {
     return;
   }
 
@@ -1101,12 +1348,18 @@ function renderVisibleRows() {
       tile.className = "file-tile";
       tile.tabIndex = 0;
       tile.title = file.name;
-      tile.draggable = true;
       tile.dataset.itemId = file.id;
       tile.setAttribute("role", "option");
       tile.setAttribute("aria-selected", String(file.id === selectedItemId));
       tile.classList.toggle("is-selected", file.id === selectedItemId);
-      tile.addEventListener("click", () => selectFile(file.id));
+      tile.addEventListener("click", (event) => {
+        if (consumeSuppressedPointerClick(file.id)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        selectFile(file.id);
+      });
       tile.addEventListener("dblclick", (event) => {
         event.preventDefault();
         void executeImmediateItemCommand(
@@ -1179,39 +1432,12 @@ function selectFile(fileId) {
 }
 
 function bindFileDrag(tile, file, sourceFolderId) {
-  tile.addEventListener("dragstart", (event) => {
-    if (!event.dataTransfer) {
-      event.preventDefault();
-      return;
-    }
-
-    closeItemMenu();
-    selectFile(file.id);
-    draggedFile = createFileItem(file, sourceFolderId);
-    fileDropHandled = false;
-    tile.setAttribute("aria-grabbed", "true");
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-wallpaper-file-id", file.id);
-    event.dataTransfer.setData("text/plain", file.name);
-    fileDragGhost.textContent = file.name;
-    fileDragGhost.hidden = false;
-    event.dataTransfer.setDragImage(fileDragGhost, 18, 18);
-    updateFileDropTargets();
-    announceCommand(`${file.name} 이동 시작`);
-  });
-  tile.addEventListener("dragend", () => {
-    tile.removeAttribute("aria-grabbed");
-    fileDragGhost.hidden = true;
-    clearFileDropTargets();
-    const shouldRefresh = Boolean(draggedFile) && !fileDropHandled;
-    draggedFile = null;
-    fileDropHandled = false;
-    renderVisibleRows();
-    if (shouldRefresh) {
-      retryRefresh();
-      announceCommand("파일 이동을 취소했습니다.");
-    }
-    flushDeferredSnapshot();
+  tile.addEventListener("pointerdown", (event) => {
+    beginPointerDrag(event, {
+      file: createFileItem(file, sourceFolderId),
+      itemId: file.id,
+      kind: "file",
+    });
   });
 }
 

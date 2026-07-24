@@ -5,7 +5,8 @@
 
 - 상태: Seelen M3·M4 구현 및 WSL 자동 검증 완료
 - 현재 단계: M3·M4 Windows Seelen 사용자 검수 준비 완료
-- 현재 기준선: 프로토콜 4, Release build 경고·오류 0, 자동 테스트 151/151
+- 현재 기준선: 프로토콜 4, 위젯 0.4.1, Release build 경고·오류 0,
+  자동 테스트 151/151, 제품 위젯 테스트 9/9
 - 현재 검수: [Seelen M3·M4 검수 기록](m3-m4-seelen-validation.md)
 
 ## 현재 Seelen 로드맵

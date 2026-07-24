@@ -44,6 +44,43 @@ export function isValidFileMoveDestination(sourceFolderId, destinationId) {
     && sourceFolderId !== destinationId;
 }
 
+export function hasExceededDragThreshold(
+  startX,
+  startY,
+  currentX,
+  currentY,
+  minimumDistance = 5,
+) {
+  const values = [startX, startY, currentX, currentY, minimumDistance];
+  if (!values.every(Number.isFinite) || minimumDistance < 0) {
+    return false;
+  }
+
+  return Math.hypot(currentX - startX, currentY - startY) >= minimumDistance;
+}
+
+export function reorderIds(orderedIds, sourceId, targetId, insertAfter) {
+  if (!Array.isArray(orderedIds)) {
+    return [];
+  }
+
+  const result = [...orderedIds];
+  const sourceIndex = result.indexOf(sourceId);
+  const initialTargetIndex = result.indexOf(targetId);
+  if (
+    sourceIndex < 0
+    || initialTargetIndex < 0
+    || sourceIndex === initialTargetIndex
+  ) {
+    return result;
+  }
+
+  const [moved] = result.splice(sourceIndex, 1);
+  const targetIndex = result.indexOf(targetId);
+  result.splice(targetIndex + (insertAfter ? 1 : 0), 0, moved);
+  return result;
+}
+
 export function placeFloatingPanel(
   clientX,
   clientY,
