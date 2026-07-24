@@ -6,7 +6,7 @@
 - 상태: Seelen M5 구현 및 자동 검증 완료
 - 현재 단계: M5 Windows Seelen 사용자 검수 준비 완료
 - 현재 기준선: 프로토콜 5, 위젯 0.5.0, Release build 경고·오류 0,
-  자동 테스트 162/162, 제품 위젯 테스트 9/9
+  자동 테스트 163/163, 제품 위젯 테스트 9/9
 - 현재 검수: [Seelen M5 검수 기록](m5-seelen-validation.md)
 
 ## 현재 Seelen 로드맵

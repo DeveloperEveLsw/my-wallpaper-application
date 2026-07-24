@@ -35,7 +35,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 | 범위 | 결과 |
 |---|---|
 | 전체 Release build | 경고 0, 오류 0 |
-| 전체 .NET 테스트 | 162/162 통과 |
+| 전체 .NET 테스트 | 163/163 통과 |
 | `Wallpaper.Seelen.Tests` | 38/38 통과 |
 | 제품 위젯 Node 테스트 | 9/9 통과 |
 | M0·제품 위젯 bundle | 통과 |
@@ -52,6 +52,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 - pending ticket 취소와 만료 뒤 다음 요청 복구
 - 위젯 다섯 번째 Glass 옵션과 프로토콜 5 DOM/bundle 계약
 - `RequestFocus`, transient broker 인자, 물리 좌표와 owner HWND 전달
+- Windows STA에서 투명한 layered tool owner HWND 실제 생성
 
 STA COM, 실제 top-level foreground, `#32768` 네이티브 메뉴 내용과 설치된 Shell 확장은
 Windows Seelen 실기기 검수로 분리한다.

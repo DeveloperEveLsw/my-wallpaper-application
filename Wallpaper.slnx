@@ -17,6 +17,7 @@
     <Project Path="tests/Wallpaper.Core.Tests/Wallpaper.Core.Tests.csproj" />
     <Project Path="tests/Wallpaper.Hosts.Tests/Wallpaper.Hosts.Tests.csproj" />
     <Project Path="tests/Wallpaper.Infrastructure.Windows.Tests/Wallpaper.Infrastructure.Windows.Tests.csproj" />
+    <Project Path="tests/Wallpaper.Seelen.Companion.Tests/Wallpaper.Seelen.Companion.Tests.csproj" />
     <Project Path="tests/Wallpaper.Seelen.Tests/Wallpaper.Seelen.Tests.csproj" />
   </Folder>
 </Solution>

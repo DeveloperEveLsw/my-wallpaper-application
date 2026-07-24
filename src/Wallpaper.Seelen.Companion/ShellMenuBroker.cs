@@ -178,12 +178,11 @@ internal static class ShellMenuBroker
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(nint window);
 
-    private sealed class ShellMenuOwnerWindow : IDisposable
+    internal sealed class ShellMenuOwnerWindow : IDisposable
     {
         private const int WsPopup = unchecked((int)0x80000000);
         private const int WsVisible = 0x10000000;
         private const int WsExToolWindow = 0x00000080;
-        private const int WsExLayered = 0x00080000;
         private const uint LwaAlpha = 0x00000002;
 
         private readonly HwndSource _source;
@@ -201,7 +200,8 @@ internal static class ShellMenuBroker
             var parameters = new HwndSourceParameters("Wallpaper.Seelen.ShellMenuOwner")
             {
                 WindowStyle = WsPopup | WsVisible,
-                ExtendedWindowStyle = WsExToolWindow | WsExLayered,
+                ExtendedWindowStyle = WsExToolWindow,
+                UsesPerPixelOpacity = true,
                 PositionX = screenX,
                 PositionY = screenY,
                 Width = 1,
