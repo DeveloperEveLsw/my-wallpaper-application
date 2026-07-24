@@ -17,8 +17,11 @@
 - current-user named pipe에서 ticket을 한 번만 실제 target으로 교환
 - `[STAThread]` broker와 투명한 1×1 top-level owner HWND
 - 기존 `IContextMenu/IContextMenu2/3`, `TrackPopupMenuEx`와 owner-drawn 메시지 경로 재사용
-- transient broker의 `InvokeCommand`에 `CMIC_MASK_NOASYNC`를 요청해 host 의존 Shell
-  명령이 완료되기 전에 broker가 종료되지 않도록 함
+- transient broker의 `InvokeCommand`에 `CMIC_MASK_NOASYNC`를 요청
+- `SHCreateThreadRef`로 만든 free-threaded reference를 `SHSetThreadRef`와
+  `SetProcessReference`에 게시해 Shell 확장이 broker 수명을 연장할 수 있게 함
+- `InvokeCommand` 반환 뒤 broker 소유 reference를 해제하고, 확장이 빌린 reference가
+  0이 될 때까지 STA Win32 메시지 pump를 유지
 - 메뉴 취소 때 widget 포커스 복귀, 명령 실행 때 새 창 포커스 보존
 - 성공·취소·실패·broker 연결 끊김 뒤 전체 projection 재스캔
 - pending ticket 경합·중복·명시적 취소·능동 만료 처리
@@ -37,7 +40,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 | 범위 | 결과 |
 |---|---|
 | 전체 Release build | 경고 0, 오류 0 |
-| 전체 .NET 테스트 | 166/166 통과 |
+| 전체 .NET 테스트 | 167/167 통과 |
 | `Wallpaper.Seelen.Tests` | 38/38 통과 |
 | 제품 위젯 Node 테스트 | 9/9 통과 |
 | M0·제품 위젯 bundle | 통과 |
@@ -56,6 +59,7 @@ WALLPAPER_DOTNET='/mnt/c/Program Files/dotnet/dotnet.exe' ./scripts/check.sh
 - `RequestFocus`, transient broker 인자, 물리 좌표와 owner HWND 전달
 - Windows STA에서 투명한 layered tool owner HWND 실제 생성
 - WPF 장기 생존 host와 transient broker의 `InvokeCommand` 비동기 정책 분리
+- transient broker의 thread/process reference 게시와 빌린 reference 해제까지의 대기
 
 STA COM, 실제 top-level foreground, `#32768` 네이티브 메뉴 내용과 설치된 Shell 확장은
 Windows Seelen 실기기 검수로 분리한다.

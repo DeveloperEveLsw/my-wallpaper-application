@@ -558,15 +558,26 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
             ShellContextMenuShowOptions options = ShellContextMenuShowOptions.None)
         {
             EnsureUsable();
-            return RunShellAction(() => ShowNativeContextMenu(
-                _contextMenu,
-                _popupMenu,
-                _contextMenu2,
-                _contextMenu3,
-                _ownerWindow,
-                screenX,
-                screenY,
-                options));
+            return RunShellAction(() =>
+            {
+                using var hostLifetime = ShellCommandHostLifetime.Create(options);
+                try
+                {
+                    return ShowNativeContextMenu(
+                        _contextMenu,
+                        _popupMenu,
+                        _contextMenu2,
+                        _contextMenu3,
+                        _ownerWindow,
+                        screenX,
+                        screenY,
+                        options);
+                }
+                finally
+                {
+                    hostLifetime?.CompleteAndWait();
+                }
+            });
         }
 
         public void Dispose()

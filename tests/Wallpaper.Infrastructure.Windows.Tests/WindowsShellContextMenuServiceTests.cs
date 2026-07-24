@@ -47,6 +47,52 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
     }
 
     [Fact]
+    public void ShellCommandHostLifetime_PublishesReferencesAndWaitsForBorrowedReference()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        RunOnStaThread(_ =>
+        {
+            var initializeResult = CoInitializeEx(0, 0x2);
+            Assert.True(initializeResult >= 0);
+
+            try
+            {
+                using var lifetime = ShellCommandHostLifetime.Create(
+                    ShellContextMenuShowOptions.RequestSynchronousCommand);
+                Assert.NotNull(lifetime);
+                var ownerReferenceCount = lifetime.ReferenceCount;
+                Assert.True(ownerReferenceCount > 0);
+
+                Assert.True(SHGetThreadRef(out var threadReference) >= 0);
+                Assert.NotEqual(0, threadReference);
+                Assert.True(GetProcessReference(out var processReference) >= 0);
+                Assert.Equal(threadReference, processReference);
+                Assert.Equal(ownerReferenceCount + 2, lifetime.ReferenceCount);
+
+                _ = Marshal.Release(processReference);
+                var releaseTask = Task.Run(() =>
+                {
+                    Thread.Sleep(150);
+                    _ = Marshal.Release(threadReference);
+                });
+
+                lifetime.CompleteAndWait();
+
+                Assert.True(releaseTask.IsCompleted);
+                Assert.Equal(0, lifetime.ReferenceCount);
+            }
+            finally
+            {
+                CoUninitialize();
+            }
+        });
+    }
+
+    [Fact]
     public void CreateItemContextMenu_RejectsStaleTargetBeforeUsingOwnerWindow()
     {
         if (!OperatingSystem.IsWindows())
@@ -209,4 +255,16 @@ public sealed class WindowsShellContextMenuServiceTests : IDisposable
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DestroyWindow(nint window);
+
+    [DllImport("ole32.dll", PreserveSig = true)]
+    private static extern int CoInitializeEx(nint reserved, uint coInit);
+
+    [DllImport("ole32.dll")]
+    private static extern void CoUninitialize();
+
+    [DllImport("shlwapi.dll", PreserveSig = true)]
+    private static extern int SHGetThreadRef(out nint reference);
+
+    [DllImport("api-ms-win-shcore-thread-l1-1-0.dll", PreserveSig = true)]
+    private static extern int GetProcessReference(out nint reference);
 }
