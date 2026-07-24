@@ -108,6 +108,43 @@ public sealed class DesktopCommandService
         }
     }
 
+    public async Task<DesktopShellMenuTargetResult> PrepareShellMenuTargetAsync(
+        DesktopShellMenuRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await _commandLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_projection.TryGetItem(request.ItemId, out var item) || item is null)
+            {
+                await RefreshAfterFailureAsync(cancellationToken).ConfigureAwait(false);
+                return DesktopShellMenuTargetResult.Failure(
+                    "target_missing",
+                    "선택한 항목이 더 이상 현재 목록에 없습니다.");
+            }
+
+            var target = ToFileCommandTarget(item);
+            try
+            {
+                await _fileCommands.EnsureValidAsync(target, cancellationToken)
+                    .ConfigureAwait(false);
+                return DesktopShellMenuTargetResult.Success(target);
+            }
+            catch (FileCommandException exception)
+            {
+                await RefreshAfterFailureAsync(cancellationToken).ConfigureAwait(false);
+                return DesktopShellMenuTargetResult.Failure(
+                    exception.Error.ToString(),
+                    exception.Message);
+            }
+        }
+        finally
+        {
+            _commandLock.Release();
+        }
+    }
+
     private async Task ExecuteAndCompleteAsync(
         DesktopCommandRequest request,
         TaskCompletionSource<DesktopCommandResult> completion,

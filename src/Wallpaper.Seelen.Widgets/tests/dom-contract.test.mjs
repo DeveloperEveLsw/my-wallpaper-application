@@ -18,8 +18,14 @@ test("스크립트가 조회하는 정적 DOM id를 HTML이 모두 제공한다"
   assert.deepEqual(missing, []);
 });
 
-test("M3 Glass 메뉴와 세 확인 대화상자 계약을 제공한다", () => {
-  for (const action of ["open", "showInExplorer", "rename", "recycle"]) {
+test("M3·M5 Glass 메뉴와 세 확인 대화상자 계약을 제공한다", () => {
+  for (const action of [
+    "open",
+    "showInExplorer",
+    "rename",
+    "recycle",
+    "windowsOptions",
+  ]) {
     assert.match(html, new RegExp(`data-item-command="${action}"`, "u"));
   }
   for (const formId of ["rename-form", "recycle-form", "move-form"]) {
@@ -27,9 +33,15 @@ test("M3 Glass 메뉴와 세 확인 대화상자 계약을 제공한다", () => 
   }
 });
 
-test("위젯은 프로토콜 4 itemCommand만 사용한다", () => {
-  assert.match(script, /const PROTOCOL_VERSION = 4;/u);
+test("위젯은 프로토콜 5의 itemCommand와 Shell Broker 준비 명령을 사용한다", () => {
+  assert.match(script, /const PROTOCOL_VERSION = 5;/u);
   assert.match(script, /type: "itemCommand"/u);
+  assert.match(script, /type: "prepareShellMenu"/u);
+  assert.match(script, /SeelenCommand\.RequestFocus/u);
+  assert.match(script, /"--shell-menu-ticket"/u);
+  assert.match(script, /ownerWindow: widget\.windowId/u);
+  assert.match(script, /screenX: screenPoint\.x/u);
+  assert.match(script, /screenY: screenPoint\.y/u);
   assert.doesNotMatch(script, /type: "openFile"/u);
 });
 

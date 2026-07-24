@@ -3,11 +3,11 @@
 > 현재 제품 경로는 Seelen UI Desktop 위젯 + .NET Companion이다. Wallpaper Engine/WPF
 > 경로의 M0~M8 기록은 재사용 가능한 구현과 회귀 근거로 아래에 보존한다.
 
-- 상태: Seelen M3·M4 구현 및 WSL 자동 검증 완료
-- 현재 단계: M3·M4 Windows Seelen 사용자 검수 준비 완료
-- 현재 기준선: 프로토콜 4, 위젯 0.4.1, Release build 경고·오류 0,
-  자동 테스트 151/151, 제품 위젯 테스트 9/9
-- 현재 검수: [Seelen M3·M4 검수 기록](m3-m4-seelen-validation.md)
+- 상태: Seelen M5 구현 및 자동 검증 완료
+- 현재 단계: M5 Windows Seelen 사용자 검수 준비 완료
+- 현재 기준선: 프로토콜 5, 위젯 0.5.0, Release build 경고·오류 0,
+  자동 테스트 162/162, 제품 위젯 테스트 9/9
+- 현재 검수: [Seelen M5 검수 기록](m5-seelen-validation.md)
 
 ## 현재 Seelen 로드맵
 
@@ -16,9 +16,9 @@
 | M0 | Seelen 위젯, 로컬 Companion, 인증 통신과 배치 가능성 검증 | 완료 |
 | M1 | 얕은 snapshot, 폴더 Dock, `루트` 파일 모달과 Seelen 루트 설정 | 완료 |
 | M2 | Shell visual, watcher, 순서 저장, 오류 복구와 1,200개 가상화 | 완료 |
-| M3 | 열기, 탐색기 위치, 이름 변경, 휴지통과 Glass 항목 메뉴 | 구현·자동 검증 완료, Windows 검수 대기 |
-| M4 | `루트` ↔ 폴더, 폴더 ↔ 폴더 내부 파일 이동과 충돌 처리 | 구현·자동 검증 완료, Windows 검수 대기 |
-| M5 | Windows 추가 옵션, Desktop 배경 메뉴와 입력 경계 | 다음 단계 |
+| M3 | 열기, 탐색기 위치, 이름 변경, 휴지통과 Glass 항목 메뉴 | 완료 |
+| M4 | `루트` ↔ 폴더, 폴더 ↔ 폴더 내부 파일 이동과 충돌 처리 | 완료 |
+| M5 | 항목의 Windows 추가 옵션과 네이티브 메뉴 입력·포커스 경계 | 구현·자동 검증 완료, Windows 검수 대기 |
 | M6 | Companion 설치·업데이트·시작·복구·진단 등 제품 운용 경로 | 대기 |
 | M7 | 성능, DPI/work area, 반복 복구와 실제 사용자 카나리 안정화 | 대기 |
 | M8 | 영상·픽셀·오디오 반응형 2D/3D 배경 렌더러 | 파일 UI MVP 후속 |

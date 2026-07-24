@@ -286,7 +286,7 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
         }
     }
 
-    private static void ShowNativeContextMenu(
+    private static bool ShowNativeContextMenu(
         nint contextMenu,
         nint popupMenu,
         nint contextMenu2,
@@ -338,10 +338,11 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
                     throw new Win32Exception(error);
                 }
 
-                return;
+                return false;
             }
 
             InvokeContextCommand(contextMenu, ownerWindow, selectedCommand, screenX, screenY);
+            return true;
         }
         finally
         {
@@ -524,10 +525,10 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
 
         public int NativeMenuItemCount { get; }
 
-        public void Show(int screenX, int screenY)
+        public bool Show(int screenX, int screenY)
         {
             EnsureUsable();
-            RunShellAction(() => ShowNativeContextMenu(
+            return RunShellAction(() => ShowNativeContextMenu(
                 _contextMenu,
                 _popupMenu,
                 _contextMenu2,
@@ -588,11 +589,11 @@ public sealed class WindowsShellContextMenuService : IShellContextMenuService
             }
         }
 
-        private static void RunShellAction(Action action)
+        private static T RunShellAction<T>(Func<T> action)
         {
             try
             {
-                action();
+                return action();
             }
             catch (ShellContextMenuException)
             {

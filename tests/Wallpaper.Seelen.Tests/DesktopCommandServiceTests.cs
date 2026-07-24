@@ -325,6 +325,39 @@ public sealed class DesktopCommandServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task M5_ShellMenuPreparation_RevalidatesTheCurrentProjectedTarget()
+    {
+        CreateFile(Path.Combine("Work", "report.txt"), "report");
+        await using var projection = CreateProjection();
+        await projection.InitializeAsync();
+        var commands = new DesktopCommandService(
+            projection,
+            new LocalRecordingFileCommandService());
+        var report = Assert.Single(
+            Assert.Single(projection.Current.Folders).Files);
+        var request = new DesktopShellMenuRequest(
+            "shell-menu-current",
+            report.Id,
+            100,
+            200,
+            8192);
+
+        var current = await commands.PrepareShellMenuTargetAsync(request);
+        File.Delete(Path.Combine(_rootPath, "Work", "report.txt"));
+        var stale = await commands.PrepareShellMenuTargetAsync(
+            request with { RequestId = "shell-menu-stale" });
+
+        Assert.True(current.Accepted);
+        Assert.NotNull(current.Target);
+        Assert.Equal(
+            "Work/report.txt",
+            current.Target.RelativePath.Replace('\\', '/'));
+        Assert.False(stale.Accepted);
+        Assert.Equal(nameof(FileCommandError.TargetMissing), stale.Code);
+        Assert.Empty(Assert.Single(projection.Current.Folders).Files);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))

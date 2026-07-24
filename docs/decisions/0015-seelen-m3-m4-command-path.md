@@ -1,9 +1,9 @@
 # ADR 0015: Seelen M3·M4 파일 명령과 내부 이동 경로
 
-- 상태: 구현됨, WSL 자동 검증 통과
+- 상태: 구현·자동 검증·Windows Seelen 실기기 검수 완료
 - 결정일: 2026-07-24
 - 적용 범위: Seelen 제품 Companion과 Desktop 위젯의 M3·M4
-- Windows Seelen 실기기 검수: 사용자 진행 예정
+- Windows Seelen 실기기 검수: 2026-07-24 통과
 
 ## 결정
 

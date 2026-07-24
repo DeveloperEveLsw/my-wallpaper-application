@@ -83,7 +83,7 @@ public sealed class DesktopCommandProtocolTests
     }
 
     [Fact]
-    public void CommandResult_SerializesToTheProtocolFourAckShape()
+    public void CommandResult_SerializesToTheItemCommandAckShape()
     {
         var request = new DesktopCommandRequest(
             "request-1",
@@ -106,6 +106,69 @@ public sealed class DesktopCommandProtocolTests
         Assert.True(root.GetProperty("accepted").GetBoolean());
         Assert.Equal("report (1).txt", root.GetProperty("proposedName").GetString());
         Assert.True(root.GetProperty("hasNameCollision").GetBoolean());
+    }
+
+    [Fact]
+    public void ShellMenuTryParse_AcceptsPhysicalCoordinatesAndOwnerWindow()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "type": "prepareShellMenu",
+              "requestId": "shell-menu-1",
+              "itemId": "file:WORK/REPORT.TXT",
+              "screenX": -1440,
+              "screenY": 225,
+              "ownerWindow": 8192
+            }
+            """);
+
+        var accepted = DesktopShellMenuProtocol.TryParse(
+            document.RootElement,
+            out var request);
+
+        Assert.True(accepted);
+        Assert.NotNull(request);
+        Assert.Equal(-1440, request.ScreenX);
+        Assert.Equal(225, request.ScreenY);
+        Assert.Equal(8192, request.OwnerWindow);
+    }
+
+    [Theory]
+    [InlineData(
+        """{"type":"prepareShellMenu","requestId":"bad id","itemId":"file:A","screenX":1,"screenY":2,"ownerWindow":3}""")]
+    [InlineData(
+        """{"type":"prepareShellMenu","requestId":"1","itemId":"file:A","screenX":1.5,"screenY":2,"ownerWindow":3}""")]
+    [InlineData(
+        """{"type":"prepareShellMenu","requestId":"1","itemId":"file:A","screenX":1,"screenY":2,"ownerWindow":0}""")]
+    [InlineData(
+        """{"type":"prepareShellMenu","requestId":"1","itemId":"file:A","screenX":1,"screenY":2}""")]
+    public void ShellMenuTryParse_RejectsMalformedRequests(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        Assert.False(DesktopShellMenuProtocol.TryParse(document.RootElement, out _));
+    }
+
+    [Fact]
+    public void ShellMenuPrepareResult_SerializesWithoutAFileSystemPath()
+    {
+        var request = new DesktopShellMenuRequest(
+            "shell-menu-1",
+            "file:WORK/REPORT.TXT",
+            100,
+            200,
+            8192);
+        var result = DesktopShellMenuPrepareResult.Success(request, "one-time-ticket");
+
+        var json = JsonSerializer.Serialize(result, JsonSerializerOptions.Web);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("shellMenuPrepareAck", root.GetProperty("type").GetString());
+        Assert.Equal("one-time-ticket", root.GetProperty("ticket").GetString());
+        Assert.False(root.TryGetProperty("rootPath", out _));
+        Assert.False(root.TryGetProperty("relativePath", out _));
     }
 
     [Theory]

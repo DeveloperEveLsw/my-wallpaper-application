@@ -3,10 +3,11 @@
 - 상태: Seelen UI 제품 경로 구현 기준, Wallpaper Engine/WPF 경로 보존
 - 원칙: Seelen UI 설정·표시, .NET Companion 파일 시스템 경계, 실제 파일 시스템 우선
 
-> 2026-07-24 Seelen UI 위젯 + .NET Companion M0를 통과했고 M1·M2 읽기 경로와
-> M3·M4 파일 명령 경로를 구현했다. 읽기 구조는
+> 2026-07-24 Seelen UI 위젯 + .NET Companion M0를 통과했고 M1·M2 읽기 경로,
+> M3·M4 파일 명령과 M5 항목 Shell 메뉴 경로를 구현했다. 읽기 구조는
 > [ADR 0014](decisions/0014-seelen-m1-m2-product-path.md), 명령 구조는
-> [ADR 0015](decisions/0015-seelen-m3-m4-command-path.md)를 따른다.
+> [ADR 0015](decisions/0015-seelen-m3-m4-command-path.md), Shell 메뉴 구조는
+> [ADR 0016](decisions/0016-seelen-m5-shell-menu-broker.md)을 따른다.
 > 아래 1.1 이후의 Wallpaper Engine/WPF 구조는 Seelen M3 이후의 재사용 자산과 회귀
 > 근거로 보존한다.
 
@@ -17,13 +18,13 @@
 ```text
 Seelen Settings ── widget config ──┐
                                    ▼
-Wallpaper.Seelen.Widgets ── authenticated WebSocket/HTTP
-                                   │
-                                   ▼
+Wallpaper.Seelen.Widgets ── authenticated WebSocket/HTTP ──┐
+                                                           ▼
 Wallpaper.Seelen.Companion ── projection · commands · watcher · settings · Shell visual
-                                   │
-                                   ▼
-                           Windows File System
+          │                                                │
+          └─ one-time ticket / current-user pipe           │
+                         ▼                                 ▼
+              transient STA Shell Menu Broker ───── Windows Shell / File System
 ```
 
 폴더 색상, 기본 Desktop 사용과 사용자 지정 루트 경로는 Seelen 위젯 설정 GUI가
@@ -32,12 +33,21 @@ Wallpaper.Seelen.Companion ── projection · commands · watcher · settings 
 표시하지 않으며 연결, watcher 또는 루트 오류 때만 위젯의 재시도 패널을 연다. 숨은
 설정 hotspot과 위젯 내부 설정 패널은 Seelen 제품 경로에 존재하지 않는다.
 
-M3·M4 명령은 프로토콜 4의 인증된 `itemCommand`로 전달한다. 위젯은 실제 경로 대신
-현재 projection ID만 보내며 Companion이 파일·실제 폴더 항목과 루트·폴더 이동 목적지를
-별도 레지스트리에서 다시 해석한다. 명령은 직렬 실행하고 최근 `requestId` 결과를
-제한적으로 보존해 동일 변경의 이중 실행을 막는다. 이름 변경, recycle과 move의 성공·
-실패 뒤에는 전체 snapshot을 다시 만든다. 세부 결정은
+제품 연결은 프로토콜 5를 사용한다. M3·M4의 인증된 `itemCommand` shape는 그대로
+유지한다. 위젯은 실제 경로 대신 현재 projection ID만 보내며 Companion이 파일·실제
+폴더 항목과 루트·폴더 이동 목적지를 별도 레지스트리에서 다시 해석한다. 명령은 직렬
+실행하고 최근 `requestId` 결과를 제한적으로 보존해 동일 변경의 이중 실행을 막는다.
+이름 변경, recycle과 move의 성공·실패 뒤에는 전체 snapshot을 다시 만든다. 세부 결정은
 [ADR 0015](decisions/0015-seelen-m3-m4-command-path.md)를 따른다.
+
+M5의 `Windows 추가 옵션 표시`는 WebView 또는 Seelen HWND 안에서 Shell COM을 직접
+호스팅하지 않는다. Companion이 현재 projection과 파일 경계를 다시 검증한 뒤 10초
+수명의 일회용 ticket만 위젯에 돌려준다. 위젯은 자신의 HWND에 포커스를 요청하고 같은
+Companion 실행 파일을 transient broker 모드로 시작한다. STA broker는 current-user
+named pipe에서만 실제 경로를 받고, 투명한 1×1 top-level owner HWND로 클래식
+`IContextMenu`를 표시한다. ticket은 한 번만 교환되며 명령·취소·실패 종료 뒤 projection을
+전체 재스캔한다. 순수 배경은 기존 커서 이벤트 투과를 통해 Explorer가 직접 소유하므로
+별도 Desktop 메뉴 broker를 만들지 않는다.
 
 Seelen UI 2.8의 위젯 WebView 호스트에서는 네이티브 drag handler가 HTML5
 `dragstart`/`drop` 경로보다 먼저 입력을 소유한다. 제품 위젯은 호스트 fork에 의존하지

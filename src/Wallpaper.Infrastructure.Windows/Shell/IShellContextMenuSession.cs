@@ -7,5 +7,5 @@ public interface IShellContextMenuSession : IDisposable
 {
     int NativeMenuItemCount { get; }
 
-    void Show(int screenX, int screenY);
+    bool Show(int screenX, int screenY);
 }

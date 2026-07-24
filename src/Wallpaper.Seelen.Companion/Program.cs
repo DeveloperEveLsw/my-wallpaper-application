@@ -1,3 +1,10 @@
 using Wallpaper.Seelen.Companion;
 
-return await CompanionApplication.RunAsync(args);
+internal static class Program
+{
+    [STAThread]
+    public static int Main(string[] args) =>
+        ShellMenuBroker.IsInvocation(args)
+            ? ShellMenuBroker.Run(args)
+            : CompanionApplication.RunAsync(args).GetAwaiter().GetResult();
+}

@@ -20,7 +20,7 @@ import {
 const EXPECTED_ORIGIN = "http://tauri.localhost";
 const PORT_START = 43127;
 const PORT_COUNT = 9;
-const PROTOCOL_VERSION = 4;
+const PROTOCOL_VERSION = 5;
 const TILE_WIDTH = 128;
 const TILE_GAP = 8;
 const TILE_ROW_HEIGHT = 130;
@@ -83,6 +83,7 @@ let pointerDragSession = null;
 let suppressedPointerClick = null;
 let selectedItemId = null;
 let contextItem = null;
+let contextItemScreenPoint = null;
 let renameTarget = null;
 let recycleTarget = null;
 let pendingMove = null;
@@ -101,6 +102,7 @@ const visualUrls = new Map();
 const issues = new Map();
 const dismissedIssueSignatures = new Map();
 const pendingCommands = new Map();
+const activeShellMenus = new Map();
 
 await widget.init({
   saveAndRestoreLastRect: false,
@@ -696,6 +698,10 @@ function adoptSocket(currentGeneration) {
       }
     } else if (message.type === "itemCommandAck") {
       settlePendingCommand(message);
+    } else if (message.type === "shellMenuPrepareAck") {
+      settlePendingCommand(message);
+    } else if (message.type === "shellMenuCompleted") {
+      handleShellMenuCompletion(message);
     } else if (message.type === "error") {
       setIssue(
         "command",
@@ -1489,6 +1495,7 @@ function openItemMenu(item, clientX, clientY) {
   }
 
   contextItem = item;
+  contextItemScreenPoint = toPhysicalScreenPoint(clientX, clientY);
   itemMenu.hidden = false;
   itemMenu.style.left = "0";
   itemMenu.style.top = "0";
@@ -1513,11 +1520,13 @@ function closeItemMenu() {
 
   itemMenu.hidden = true;
   contextItem = null;
+  contextItemScreenPoint = null;
   rerouteLastCursor();
 }
 
 async function handleItemMenuCommand(action) {
   const item = contextItem;
+  const screenPoint = contextItemScreenPoint;
   closeItemMenu();
   if (!item) {
     return;
@@ -1529,7 +1538,117 @@ async function handleItemMenuCommand(action) {
     openRecycleDialog(item);
   } else if (action === "open" || action === "showInExplorer") {
     await executeImmediateItemCommand(action, item);
+  } else if (action === "windowsOptions") {
+    await executeWindowsOptions(item, screenPoint);
   }
+}
+
+function toPhysicalScreenPoint(clientX, clientY) {
+  const scale = Number.isFinite(globalThis.devicePixelRatio)
+    && globalThis.devicePixelRatio > 0
+    ? globalThis.devicePixelRatio
+    : 1;
+  return {
+    x: Math.round((widgetPhysicalRect?.x ?? 0) + clientX * scale),
+    y: Math.round((widgetPhysicalRect?.y ?? 0) + clientY * scale),
+  };
+}
+
+async function executeWindowsOptions(item, screenPoint) {
+  if (!screenPoint) {
+    setCommandIssue(
+      "Windows 추가 옵션 메뉴를 열지 못했습니다.",
+      "메뉴를 표시할 화면 위치를 확인할 수 없습니다.",
+      null,
+    );
+    return;
+  }
+
+  let requestId = null;
+  try {
+    announceCommand(`${item.name} Windows 추가 옵션 준비`);
+    const prepared = await sendShellMenuPrepare(item.id, screenPoint);
+    if (!prepared.accepted || !prepared.ticket) {
+      setCommandIssue(
+        "Windows 추가 옵션 메뉴를 준비하지 못했습니다.",
+        prepared.message,
+        () => void executeWindowsOptions(item, screenPoint),
+      );
+      return;
+    }
+
+    requestId = prepared.requestId;
+    activeShellMenus.set(requestId, { item, screenPoint });
+    setIssue("command", null);
+    await invoke(SeelenCommand.RequestFocus, { hwnd: widget.windowId });
+    const companionPath = await resolveCompanionPath();
+    await invoke(SeelenCommand.Run, {
+      program: companionPath,
+      args: ["--shell-menu-ticket", prepared.ticket],
+      workingDir: companionPath.slice(0, companionPath.lastIndexOf("\\")),
+      elevated: false,
+    });
+  } catch (error) {
+    if (requestId) {
+      activeShellMenus.delete(requestId);
+      sendAuthenticated({ requestId, type: "cancelShellMenu" });
+    }
+    setCommandIssue(
+      "Windows 추가 옵션 메뉴를 열지 못했습니다.",
+      error instanceof Error ? error.message : String(error),
+      () => void executeWindowsOptions(item, screenPoint),
+    );
+  }
+}
+
+function sendShellMenuPrepare(itemId, screenPoint) {
+  const requestId = crypto.randomUUID();
+  const message = {
+    itemId,
+    ownerWindow: widget.windowId,
+    requestId,
+    screenX: screenPoint.x,
+    screenY: screenPoint.y,
+    type: "prepareShellMenu",
+  };
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingCommands.delete(requestId);
+      reject(new Error("Windows 추가 옵션 메뉴 준비 시간이 초과되었습니다."));
+    }, 10_000);
+    pendingCommands.set(requestId, { reject, resolve, timeout });
+    if (!sendAuthenticated(message)) {
+      clearTimeout(timeout);
+      pendingCommands.delete(requestId);
+      reject(new Error("Companion에 연결되어 있지 않습니다."));
+    }
+  });
+}
+
+function handleShellMenuCompletion(message) {
+  const pending = activeShellMenus.get(message.requestId);
+  if (!pending) {
+    return;
+  }
+
+  activeShellMenus.delete(message.requestId);
+  if (!message.succeeded) {
+    setCommandIssue(
+      "Windows 추가 옵션 메뉴를 완료하지 못했습니다.",
+      message.message,
+      () => void executeWindowsOptions(pending.item, pending.screenPoint),
+    );
+    return;
+  }
+
+  setIssue("command", null);
+  announceCommand(
+    message.commandInvoked
+      ? "Windows Shell 명령을 완료했습니다."
+      : "Windows 추가 옵션 메뉴를 닫았습니다.",
+  );
+  rerouteLastCursor();
 }
 
 async function executeImmediateItemCommand(action, item) {

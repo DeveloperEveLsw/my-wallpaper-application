@@ -51,21 +51,27 @@ internal static class CompanionApplication
             await projection.InitializeAsync();
             var visuals = new WindowsVisualResponseService(projection);
             var fileCommands = new WindowsFileCommandService();
+            var commandService = new DesktopCommandService(projection, fileCommands);
+            var shellMenuTickets = new ShellMenuTicketRegistry();
 
             await using var loopback = await ProductLoopbackServer.StartAsync(
                 options,
                 sessions,
                 projection,
                 visuals,
-                fileCommands,
+                commandService,
+                shellMenuTickets,
                 CancellationToken.None);
             var pipe = new ProductBootstrapPipe(sessions, loopback.Port);
             var pipeTask = pipe.RunServerAsync(loopback.Application.Lifetime.ApplicationStopping);
+            var shellMenuPipe = new ShellMenuPipeServer(shellMenuTickets, commandService);
+            var shellMenuPipeTask = shellMenuPipe.RunServerAsync(
+                loopback.Application.Lifetime.ApplicationStopping);
 
             await loopback.Application.WaitForShutdownAsync();
             try
             {
-                await pipeTask;
+                await Task.WhenAll(pipeTask, shellMenuPipeTask);
             }
             catch (OperationCanceledException)
             {

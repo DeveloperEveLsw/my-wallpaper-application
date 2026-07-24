@@ -7,13 +7,11 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Primitives;
-using Wallpaper.Infrastructure.Windows.FileOperations;
-
 namespace Wallpaper.Seelen.Companion;
 
 internal sealed class ProductLoopbackServer : IAsyncDisposable
 {
-    private const int ProtocolVersion = 4;
+    private const int ProtocolVersion = 5;
     private const int MaximumIncomingBytes = 256 * 1024;
 
     private ProductLoopbackServer(WebApplication application, int port)
@@ -31,10 +29,10 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         SessionRegistry sessions,
         DesktopProjectionService projection,
         WindowsVisualResponseService visuals,
-        IFileCommandService fileCommands,
+        DesktopCommandService commandService,
+        ShellMenuTicketRegistry shellMenus,
         CancellationToken cancellationToken)
     {
-        var commandService = new DesktopCommandService(projection, fileCommands);
         foreach (var port in options.CandidatePorts)
         {
             if (!CanBindExclusively(port))
@@ -47,7 +45,8 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 sessions,
                 projection,
                 visuals,
-                commandService);
+                commandService,
+                shellMenus);
             try
             {
                 await application.StartAsync(cancellationToken);
@@ -69,7 +68,8 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         SessionRegistry sessions,
         DesktopProjectionService projection,
         WindowsVisualResponseService visuals,
-        DesktopCommandService commandService)
+        DesktopCommandService commandService,
+        ShellMenuTicketRegistry shellMenus)
     {
         var builder = WebApplication.CreateSlimBuilder(
             new WebApplicationOptions
@@ -193,6 +193,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 sessions,
                 projection,
                 commandService,
+                shellMenus,
                 port));
         return application;
     }
@@ -202,6 +203,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         SessionRegistry sessions,
         DesktopProjectionService projection,
         DesktopCommandService commandService,
+        ShellMenuTicketRegistry shellMenus,
         int port)
     {
         var origin = GetSingleHeader(context.Request.Headers, "Origin");
@@ -244,7 +246,20 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                             snapshot,
                             watch = projection.WatchStatus,
                         }));
+            void OnShellMenuCompleted(ShellMenuCompletion completion) =>
+                outgoing.Writer.TryWrite(
+                    SerializeJson(
+                        new
+                        {
+                            type = "shellMenuCompleted",
+                            completion.RequestId,
+                            completion.Succeeded,
+                            completion.CommandInvoked,
+                            completion.Code,
+                            completion.Message,
+                        }));
             projection.SnapshotChanged += OnSnapshotChanged;
+            shellMenus.Completed += OnShellMenuCompleted;
             try
             {
                 await SendJsonAsync(
@@ -266,6 +281,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                     session.Token,
                     projection,
                     commandService,
+                    shellMenus,
                     outgoing.Writer,
                     connection.Token);
                 var sendTask = SendOutgoingAsync(socket, outgoing.Reader, connection.Token);
@@ -277,6 +293,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
             finally
             {
                 projection.SnapshotChanged -= OnSnapshotChanged;
+                shellMenus.Completed -= OnShellMenuCompleted;
                 outgoing.Writer.TryComplete();
             }
         }
@@ -302,6 +319,7 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
         string sessionToken,
         DesktopProjectionService projection,
         DesktopCommandService commandService,
+        ShellMenuTicketRegistry shellMenus,
         ChannelWriter<byte[]> outgoing,
         CancellationToken cancellationToken)
     {
@@ -393,6 +411,56 @@ internal sealed class ProductLoopbackServer : IAsyncDisposable
                 {
                     var result = await commandService.ExecuteAsync(request, cancellationToken);
                     outgoing.TryWrite(SerializeJson(result));
+                }
+                else if (type == "prepareShellMenu"
+                    && DesktopShellMenuProtocol.TryParse(root, out var shellMenuRequest)
+                    && shellMenuRequest is not null)
+                {
+                    var target = await commandService.PrepareShellMenuTargetAsync(
+                        shellMenuRequest,
+                        cancellationToken);
+                    if (!target.Accepted || target.Target is null)
+                    {
+                        outgoing.TryWrite(
+                            SerializeJson(
+                                DesktopShellMenuPrepareResult.Failure(
+                                    shellMenuRequest,
+                                    target.Code ?? "shell_menu_target_rejected",
+                                    target.Message
+                                        ?? "Windows 추가 옵션 메뉴 대상을 확인하지 못했습니다.")));
+                        continue;
+                    }
+
+                    var prepared = shellMenus.Prepare(shellMenuRequest, target.Target);
+                    outgoing.TryWrite(
+                        SerializeJson(
+                            prepared.Accepted && prepared.Ticket is not null
+                                ? DesktopShellMenuPrepareResult.Success(
+                                    shellMenuRequest,
+                                    prepared.Ticket)
+                                : DesktopShellMenuPrepareResult.Failure(
+                                    shellMenuRequest,
+                                    prepared.Code ?? "shell_menu_prepare_failed",
+                                    prepared.Message
+                                        ?? "Windows 추가 옵션 메뉴를 준비하지 못했습니다.")));
+                }
+                else if (type == "cancelShellMenu"
+                    && root.TryGetProperty("requestId", out var shellMenuRequestId)
+                    && shellMenuRequestId.ValueKind == JsonValueKind.String
+                    && shellMenuRequestId.GetString() is { Length: > 0 and <= 128 } requestId)
+                {
+                    var accepted = shellMenus.CancelPending(
+                        requestId,
+                        "shell_menu_launch_cancelled",
+                        "Windows 추가 옵션 메뉴 호스트를 시작하지 못했습니다.");
+                    outgoing.TryWrite(
+                        SerializeJson(
+                            new
+                            {
+                                type = "shellMenuCancelAck",
+                                requestId,
+                                accepted,
+                            }));
                 }
                 else
                 {
