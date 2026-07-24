@@ -28,17 +28,6 @@ const OVERSCAN_ROWS = 3;
 const ROOT_SYNC_DELAY = 450;
 const POINTER_DRAG_THRESHOLD = 5;
 const POINTER_DRAG_GHOST_OFFSET = 16;
-const TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
-  hour: "2-digit",
-  hour12: false,
-  minute: "2-digit",
-});
-const DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
-  day: "numeric",
-  month: "long",
-  weekday: "long",
-  year: "numeric",
-});
 
 const widget = Widget.self;
 const dock = document.getElementById("dock");
@@ -96,6 +85,7 @@ let desiredRootConfiguration = {
   customRootPath: "",
   useDefaultDesktop: true,
 };
+let showErrorMessages = true;
 let activeIssue = null;
 let activeIssueKey = null;
 const visualUrls = new Map();
@@ -111,8 +101,6 @@ await widget.init({
 await fitWidgetToWorkArea();
 await initializeSettings();
 bindUi();
-updateClock();
-setInterval(updateClock, 1000);
 await widget.ready();
 await enableLayeredInputRouting();
 void reconnect("초기 연결");
@@ -263,6 +251,7 @@ async function initializeSettings() {
 }
 
 function applyWidgetSettings(config) {
+  showErrorMessages = config.showErrorMessages !== false;
   const customColor = config.useCustomFolderColor
     && typeof config.customFolderColor === "string"
     && CSS.supports("color", config.customFolderColor)
@@ -278,6 +267,7 @@ function applyWidgetSettings(config) {
       : "",
     useDefaultDesktop: config.useDefaultDesktop !== false,
   };
+  renderIssue();
 }
 
 async function enableLayeredInputRouting() {
@@ -366,12 +356,6 @@ function setCursorEventsIgnored(ignored) {
     });
 }
 
-function updateClock() {
-  const now = new Date();
-  document.getElementById("clock-time").textContent = TIME_FORMATTER.format(now);
-  document.getElementById("clock-date").textContent = DATE_FORMATTER.format(now);
-}
-
 function createIssue(priority, title, message, retry) {
   return { message, priority, retry, title };
 }
@@ -413,7 +397,7 @@ function renderIssue() {
     .sort((left, right) => right[1].priority - left[1].priority)[0] ?? null;
   activeIssueKey = nextEntry?.[0] ?? null;
   activeIssue = nextEntry?.[1] ?? null;
-  if (!activeIssue) {
+  if (!activeIssue || !showErrorMessages) {
     errorPanel.hidden = true;
     rerouteLastCursor();
     return;

@@ -19,6 +19,16 @@ js: !include index.js
 css: !include index.css
 settings:
   - type: switch
+    key: showErrorMessages
+    label:
+      en: Show error messages
+      ko: 오류 메시지 표시
+    description:
+      en: Show Wallpaper error messages in the top-right corner.
+      ko: 우측 상단에 Wallpaper 오류 메시지를 표시합니다.
+    defaultValue: true
+
+  - type: switch
     key: useDefaultDesktop
     label:
       en: Use the default Desktop folder

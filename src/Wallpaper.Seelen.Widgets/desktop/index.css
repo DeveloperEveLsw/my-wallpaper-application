@@ -43,31 +43,6 @@ button,
   user-select: none;
 }
 
-.desktop-clock {
-  position: fixed;
-  top: 44px;
-  left: 50%;
-  z-index: 1;
-  display: grid;
-  justify-items: center;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-#clock-time {
-  font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", sans-serif;
-  font-size: 44px;
-  font-weight: 300;
-  line-height: 1.18;
-  letter-spacing: -0.025em;
-}
-
-#clock-date {
-  margin-top: 4px;
-  color: rgb(194 210 232 / 69%);
-  font-size: 13px;
-}
-
 .error-panel,
 .file-modal,
 .transient-surface {
@@ -703,10 +678,6 @@ body.is-pointer-dragging * {
 }
 
 @media (max-height: 720px) {
-  .desktop-clock {
-    top: 24px;
-  }
-
   .file-modal {
     bottom: 218px;
     height: calc(100vh - 250px);
